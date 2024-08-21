@@ -70,9 +70,8 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 		return nil
 	}
 	if event.Type == slackevents.URLVerification {
-		var res *slackevents.ChallengeResponse
-		err := json.Unmarshal(body, &res)
-		if err != nil {
+		var res slackevents.ChallengeResponse
+		if err := json.Unmarshal(body, &res); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return nil
 		}
