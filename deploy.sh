@@ -1,3 +1,5 @@
+#!/bin/bash
+
 gcloud functions deploy slack-gemini \
 	--gen2 \
 	--runtime=go122 \
