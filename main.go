@@ -20,6 +20,7 @@ import (
 var (
 	isDebug   = flag.Bool("d", false, "enable debug mode")
 	reMention = regexp.MustCompile(`<@\w+>`)
+	botUser   string
 )
 
 func main() {
@@ -33,12 +34,15 @@ func main() {
 	geminiApiKey := os.Getenv("GEMINI_API_KEY")
 
 	api := slack.New(slackBotToken, slack.OptionAppLevelToken(slackAppToken), slack.OptionDebug(*isDebug))
-	if _, err := api.AuthTest(); err != nil {
+	res, err := api.AuthTest()
+	if err != nil {
 		log.Fatal(err)
 	}
+	botUser = res.UserID
 	socketClient := socketmode.New(api, socketmode.OptionDebug(*isDebug))
 
 	ctx := context.Background()
+
 	geminiClient, err := genai.NewClient(ctx, option.WithAPIKey(geminiApiKey))
 	if err != nil {
 		log.Fatal(err)
@@ -47,11 +51,11 @@ func main() {
 
 	model := geminiClient.GenerativeModel("gemini-1.5-flash")
 
-	go processSocketEvent(socketClient, &ctx, model)
+	go processSocketEvent(&ctx, api, socketClient, model)
 	socketClient.Run()
 }
 
-func processSocketEvent(client *socketmode.Client, ctx *context.Context, model *genai.GenerativeModel) {
+func processSocketEvent(ctx *context.Context, api *slack.Client, client *socketmode.Client, model *genai.GenerativeModel) {
 	for envelope := range client.Events {
 		switch envelope.Type {
 		case socketmode.EventTypeEventsAPI:
@@ -61,19 +65,46 @@ func processSocketEvent(client *socketmode.Client, ctx *context.Context, model *
 				fmt.Printf("Not an Event API event: %+v\n", envelope)
 				continue
 			}
-			client.Debugf("payload: %+v\n", payload)
 			switch payload.Type {
 			case slackevents.CallbackEvent:
-				switch mention := payload.InnerEvent.Data.(type) {
+				switch event := payload.InnerEvent.Data.(type) {
 				case *slackevents.AppMentionEvent:
-					prompt := reMention.ReplaceAllLiteralString(mention.Text, "")
-					client.Debugf("Received message: %s\n", prompt)
-					res, err := model.GenerateContent(*ctx, genai.Text(prompt))
-					if err != nil {
-						fmt.Printf("Failed to get Gemini's response: %+v", err)
+					client.Debugf("AppMentionEvent: %+v\n", event)
+					prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
+					answer := generateAnswer(ctx, model, prompt)
+					if answer == "" {
 						continue
 					}
-					client.PostMessage(mention.Channel, slack.MsgOptionText(joinResponse(res), false), slack.MsgOptionTS(mention.TimeStamp))
+					client.PostMessageContext(*ctx, event.Channel, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.TimeStamp))
+				case *slackevents.MessageEvent:
+					client.Debugf("MessageEvent: %+v\n", event)
+					if event.User == botUser || (event.ChannelType == "channel" && event.ThreadTimeStamp == "") {
+						continue
+					}
+					prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
+					var answer string
+					var options []slack.MsgOption
+					if event.ThreadTimeStamp == "" {
+						answer = generateAnswer(ctx, model, prompt)
+						if answer == "" {
+							continue
+						}
+						options = append(options, slack.MsgOptionText(answer, false))
+						if reMention.MatchString(event.Text) {
+							options = append(options, slack.MsgOptionTS(event.TimeStamp))
+						}
+					} else {
+						params := &slack.GetConversationRepliesParameters{
+							ChannelID: event.Channel,
+							Timestamp: event.ThreadTimeStamp,
+						}
+						answer = generateChatAnswer(ctx, api, params, model, prompt)
+						if answer == "" {
+							continue
+						}
+						options = append(options, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.ThreadTimeStamp))
+					}
+					client.PostMessageContext(*ctx, event.Channel, options...)
 				default:
 					fmt.Printf("Unsupported innerEvent type: %s\n", payload.InnerEvent.Type)
 				}
@@ -84,6 +115,57 @@ func processSocketEvent(client *socketmode.Client, ctx *context.Context, model *
 			fmt.Printf("Unsupported event type: %s\n", envelope.Type)
 		}
 	}
+}
+
+func generateAnswer(ctx *context.Context, model *genai.GenerativeModel, prompt string) string {
+	if prompt == "" {
+		return ""
+	}
+	res, err := model.GenerateContent(*ctx, genai.Text(prompt))
+	if err != nil {
+		fmt.Printf("Failed to get Gemini's response: %+v", err)
+		return ""
+	}
+	return joinResponse(res)
+}
+
+func generateChatAnswer(
+	ctx *context.Context,
+	api *slack.Client,
+	params *slack.GetConversationRepliesParameters,
+	model *genai.GenerativeModel,
+	prompt string,
+) string {
+	if prompt == "" {
+		return ""
+	}
+	msgs, _, _, err := api.GetConversationRepliesContext(*ctx, params)
+	if err != nil {
+		fmt.Printf("Failed to get thread content: %+v", err)
+		return ""
+	}
+	chat := model.StartChat()
+	chat.History = createChatHistory(msgs)
+	res, err := chat.SendMessage(*ctx, genai.Text(prompt))
+	if err != nil {
+		fmt.Printf("Failed to get Gemini's response: %+v", err)
+		return ""
+	}
+	return joinResponse(res)
+}
+
+func createChatHistory(msgs []slack.Message) []*genai.Content {
+	history := []*genai.Content{}
+	for _, msg := range msgs {
+		content := &genai.Content{
+			Parts: []genai.Part{
+				genai.Text(msg.Text),
+			},
+			Role: "user",
+		}
+		history = append(history, content)
+	}
+	return history
 }
 
 func joinResponse(res *genai.GenerateContentResponse) string {
