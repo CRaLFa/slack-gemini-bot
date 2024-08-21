@@ -33,8 +33,8 @@ func init() {
 }
 
 func SlackGemini(w http.ResponseWriter, r *http.Request) {
-	apiEvent := handleRequest(w, r)
-	if apiEvent == nil {
+	event := handleRequest(w, r)
+	if event == nil {
 		return
 	}
 
@@ -55,7 +55,7 @@ func SlackGemini(w http.ResponseWriter, r *http.Request) {
 
 	model := geminiClient.GenerativeModel("gemini-1.5-flash")
 
-	processApiEvent(apiEvent, &ctx, api, model)
+	processApiEvent(event, &ctx, api, model)
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAPIEvent {
@@ -64,12 +64,12 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 		w.WriteHeader(http.StatusBadRequest)
 		return nil
 	}
-	apiEvent, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
+	event, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return nil
 	}
-	if apiEvent.Type == slackevents.URLVerification {
+	if event.Type == slackevents.URLVerification {
 		var res *slackevents.ChallengeResponse
 		err := json.Unmarshal(body, &res)
 		if err != nil {
@@ -80,7 +80,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 		w.Write([]byte(res.Challenge))
 		return nil
 	}
-	return &apiEvent
+	return &event
 }
 
 func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
@@ -88,7 +88,7 @@ func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context,
 	case slackevents.CallbackEvent:
 		switch event := apiEvent.InnerEvent.Data.(type) {
 		case *slackevents.AppMentionEvent:
-			log.Printf("AppMentionEvent: %+v\n", event)
+			log.Printf("AppMentionEvent: %+v", event)
 			prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
 			answer := generateAnswer(ctx, model, prompt)
 			if answer == "" {
@@ -96,7 +96,7 @@ func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context,
 			}
 			api.PostMessageContext(*ctx, event.Channel, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.TimeStamp))
 		case *slackevents.MessageEvent:
-			log.Printf("MessageEvent: %+v\n", event)
+			log.Printf("MessageEvent: %+v", event)
 			if event.User == botUser || (event.ChannelType == "channel" && event.ThreadTimeStamp == "") {
 				return
 			}
