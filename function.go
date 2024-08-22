@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
@@ -21,6 +22,7 @@ import (
 var (
 	slackBotToken string
 	geminiApiKey  string
+	isDebug       bool
 	reMention     = regexp.MustCompile(`<@\w+>`)
 	botUser       string
 )
@@ -28,6 +30,7 @@ var (
 func init() {
 	slackBotToken = os.Getenv("SLACK_BOT_TOKEN")
 	geminiApiKey = os.Getenv("GEMINI_API_KEY")
+	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
 	functions.HTTP("SlackGemini", SlackGemini)
 }
@@ -38,7 +41,7 @@ func SlackGemini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api := slack.New(slackBotToken, slack.OptionDebug(true))
+	api := slack.New(slackBotToken, slack.OptionDebug(isDebug))
 	res, err := api.AuthTest()
 	if err != nil {
 		log.Fatal(err)
@@ -47,13 +50,13 @@ func SlackGemini(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 
-	geminiClient, err := genai.NewClient(ctx, option.WithAPIKey(geminiApiKey))
+	gemini, err := genai.NewClient(ctx, option.WithAPIKey(geminiApiKey))
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer geminiClient.Close()
+	defer gemini.Close()
 
-	model := geminiClient.GenerativeModel("gemini-1.5-flash")
+	model := gemini.GenerativeModel("gemini-1.5-flash")
 
 	processApiEvent(event, &ctx, api, model)
 }
@@ -87,7 +90,9 @@ func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context,
 	case slackevents.CallbackEvent:
 		switch event := apiEvent.InnerEvent.Data.(type) {
 		case *slackevents.AppMentionEvent:
-			log.Printf("AppMentionEvent: %+v", event)
+			if isDebug {
+				fmt.Printf("AppMentionEvent: %#v\n", event)
+			}
 			prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
 			answer := generateAnswer(ctx, model, prompt)
 			if answer == "" {
@@ -95,15 +100,16 @@ func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context,
 			}
 			api.PostMessageContext(*ctx, event.Channel, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.TimeStamp))
 		case *slackevents.MessageEvent:
-			log.Printf("MessageEvent: %+v", event)
+			if isDebug {
+				fmt.Printf("MessageEvent: %#v\n", event)
+			}
 			if event.User == botUser || (event.ChannelType == "channel" && event.ThreadTimeStamp == "") {
 				return
 			}
 			prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
-			var answer string
 			var options []slack.MsgOption
 			if event.ThreadTimeStamp == "" {
-				answer = generateAnswer(ctx, model, prompt)
+				answer := generateAnswer(ctx, model, prompt)
 				if answer == "" {
 					return
 				}
@@ -116,7 +122,7 @@ func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context,
 					ChannelID: event.Channel,
 					Timestamp: event.ThreadTimeStamp,
 				}
-				answer = generateChatAnswer(ctx, api, params, model, prompt)
+				answer := generateChatAnswer(ctx, api, params, model, prompt)
 				if answer == "" {
 					return
 				}
@@ -124,10 +130,10 @@ func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context,
 			}
 			api.PostMessageContext(*ctx, event.Channel, options...)
 		default:
-			log.Printf("Unsupported innerEvent type: %s\n", apiEvent.InnerEvent.Type)
+			fmt.Println("Unsupported innerEvent type:", apiEvent.InnerEvent.Type)
 		}
 	default:
-		log.Printf("Unsupported apiEvent type: %s\n", apiEvent.Type)
+		fmt.Println("Unsupported apiEvent type:", apiEvent.Type)
 	}
 }
 
@@ -137,7 +143,7 @@ func generateAnswer(ctx *context.Context, model *genai.GenerativeModel, prompt s
 	}
 	res, err := model.GenerateContent(*ctx, genai.Text(prompt))
 	if err != nil {
-		log.Printf("Failed to get Gemini's response: %+v", err)
+		fmt.Println("Failed to get Gemini's response:", err)
 		return ""
 	}
 	return joinResponse(res)
@@ -155,27 +161,42 @@ func generateChatAnswer(
 	}
 	msgs, _, _, err := api.GetConversationRepliesContext(*ctx, params)
 	if err != nil {
-		log.Printf("Failed to get thread content: %+v", err)
+		fmt.Println("Failed to get thread content:", err)
+		return ""
+	}
+	if isDebug {
+		for i, msg := range msgs {
+			fmt.Printf("msgs[%d]: %#v\n", i, msg)
+		}
+	}
+	if msgs[len(msgs)-2].User != botUser {
 		return ""
 	}
 	chat := model.StartChat()
 	chat.History = createChatHistory(msgs)
 	res, err := chat.SendMessage(*ctx, genai.Text(prompt))
 	if err != nil {
-		log.Printf("Failed to get Gemini's response: %+v", err)
+		fmt.Println("Failed to get Gemini's response:", err)
 		return ""
 	}
 	return joinResponse(res)
 }
 
 func createChatHistory(msgs []slack.Message) []*genai.Content {
+	getRole := func(msg slack.Message) string {
+		if msg.User == botUser {
+			return "model"
+		} else {
+			return "user"
+		}
+	}
 	history := []*genai.Content{}
-	for _, msg := range msgs {
+	for _, msg := range msgs[:len(msgs)-1] {
 		content := &genai.Content{
 			Parts: []genai.Part{
 				genai.Text(msg.Text),
 			},
-			Role: "user",
+			Role: getRole(msg),
 		}
 		history = append(history, content)
 	}
@@ -187,7 +208,7 @@ func joinResponse(res *genai.GenerateContentResponse) string {
 	for _, cand := range res.Candidates {
 		if cand != nil {
 			for _, part := range cand.Content.Parts {
-				buf = append(buf, fmt.Sprintf("%v", part))
+				buf = append(buf, fmt.Sprintf("%s", part))
 			}
 		}
 	}
