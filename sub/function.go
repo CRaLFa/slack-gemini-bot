@@ -158,13 +158,13 @@ func generateChatAnswer(
 		fmt.Println("Failed to get thread content:", err)
 		return ""
 	}
+	if msgs[len(msgs)-2].User != botUser {
+		return ""
+	}
 	if isDebug {
 		for i, msg := range msgs {
 			fmt.Printf("msgs[%d]: %#v\n", i, msg)
 		}
-	}
-	if msgs[len(msgs)-2].User != botUser {
-		return ""
 	}
 	chat := model.StartChat()
 	chat.History = createChatHistory(msgs)
@@ -204,7 +204,7 @@ func createChatHistory(msgs []slack.Message) []*genai.Content {
 }
 
 func joinResponse(res *genai.GenerateContentResponse) string {
-	reList := regexp.MustCompile(`(\n*\s*)\* `)
+	reList := regexp.MustCompile(`(\n+\s*)\* `)
 	replaceMarkdown := func(s string) string {
 		if isDebug {
 			fmt.Printf("%#v\n", s)
