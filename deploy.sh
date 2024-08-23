@@ -1,11 +1,40 @@
 #!/bin/bash
 
-gcloud functions deploy slack-gemini \
-	--gen2 \
-	--runtime=go122 \
-	--region=asia-northeast1 \
-	--source=. \
-	--entry-point=SlackGemini \
-	--trigger-http \
-	--allow-unauthenticated \
-	--env-vars-file .env.yaml
+deploy_pub () {
+	gcloud functions deploy slack-gemini-pub \
+		--gen2 \
+		--runtime=go122 \
+		--region=asia-northeast1 \
+		--source=./pub \
+		--entry-point=SlackGemini \
+		--trigger-http \
+		--allow-unauthenticated \
+		--env-vars-file .env.yaml \
+		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com
+}
+
+deploy_sub () {
+	gcloud functions deploy slack-gemini-sub \
+		--gen2 \
+		--runtime=go122 \
+		--region=asia-northeast1 \
+		--source=./sub \
+		--entry-point=SlackGemini \
+		--trigger-topic=slack-gemini \
+		--env-vars-file .env.yaml \
+		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com
+}
+
+main () {
+	[[ $# -lt 1 || "$1" = 'pub' ]] && {
+		echo -e 'Deploy slack-gemini-pub function...\n'
+		deploy_pub
+		echo
+	}
+	[[ $# -lt 1 || "$1" = 'sub' ]] && {
+		echo -e 'Deploy slack-gemini-sub function...\n'
+		deploy_sub
+	}
+}
+
+main "$@"

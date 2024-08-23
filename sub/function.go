@@ -1,23 +1,37 @@
-package function
+package sub
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"cloud.google.com/go/pubsub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/cloudevents/sdk-go/v2/event"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"google.golang.org/api/option"
 )
+
+type MessagePublishedData struct {
+	Message pubsub.Message
+}
+
+type ApiInnerEvent struct {
+	Type            string
+	Channel         string
+	ChannelType     string
+	User            string
+	Text            string
+	TimeStamp       string
+	ThreadTimeStamp string
+}
 
 var (
 	slackBotToken string
@@ -32,108 +46,88 @@ func init() {
 	geminiApiKey = os.Getenv("GEMINI_API_KEY")
 	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
-	functions.HTTP("SlackGemini", SlackGemini)
+	functions.CloudEvent("SlackGemini", SlackGemini)
 }
 
-func SlackGemini(w http.ResponseWriter, r *http.Request) {
-	event := handleRequest(w, r)
-	if event == nil {
-		return
+func SlackGemini(ctx context.Context, e event.Event) error {
+	var msg MessagePublishedData
+	if err := e.DataAs(&msg); err != nil {
+		fmt.Println(err)
+		return err
+	}
+	fmt.Printf("Received a message: %s\n", msg.Message.ID)
+
+	buf := bytes.NewBuffer(msg.Message.Data)
+	var event ApiInnerEvent
+	if err := gob.NewDecoder(buf).Decode(&event); err != nil {
+		fmt.Println(err)
+		return err
 	}
 
 	api := slack.New(slackBotToken, slack.OptionDebug(isDebug))
 	res, err := api.AuthTest()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		return err
 	}
 	botUser = res.UserID
-
-	ctx := context.Background()
+	if event.User == botUser {
+		return nil
+	}
 
 	gemini, err := genai.NewClient(ctx, option.WithAPIKey(geminiApiKey))
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		return err
 	}
 	defer gemini.Close()
-
 	model := gemini.GenerativeModel("gemini-1.5-flash")
 
-	processApiEvent(event, &ctx, api, model)
+	processApiEvent(&event, &ctx, api, model)
+	return nil
 }
 
-func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAPIEvent {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return nil
-	}
-	event, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return nil
-	}
-	if event.Type == slackevents.URLVerification {
-		var res slackevents.ChallengeResponse
-		if err := json.Unmarshal(body, &res); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return nil
+func processApiEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
+	switch slackevents.EventsAPIType(event.Type) {
+	case slackevents.AppMention:
+		if isDebug {
+			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(res.Challenge))
-		return nil
-	}
-	return &event
-}
-
-func processApiEvent(apiEvent *slackevents.EventsAPIEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
-	switch apiEvent.Type {
-	case slackevents.CallbackEvent:
-		switch event := apiEvent.InnerEvent.Data.(type) {
-		case *slackevents.AppMentionEvent:
-			if isDebug {
-				fmt.Printf("AppMentionEvent: %#v\n", event)
-			}
-			prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
+		prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
+		answer := generateAnswer(ctx, model, prompt)
+		if answer == "" {
+			return
+		}
+		api.PostMessageContext(*ctx, event.Channel, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.TimeStamp))
+	case slackevents.Message:
+		if isDebug {
+			fmt.Printf("MessageEvent: %#v\n", event)
+		}
+		prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
+		var options []slack.MsgOption
+		if event.ThreadTimeStamp == "" {
 			answer := generateAnswer(ctx, model, prompt)
 			if answer == "" {
 				return
 			}
-			api.PostMessageContext(*ctx, event.Channel, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.TimeStamp))
-		case *slackevents.MessageEvent:
-			if isDebug {
-				fmt.Printf("MessageEvent: %#v\n", event)
+			options = append(options, slack.MsgOptionText(answer, false))
+			if reMention.MatchString(event.Text) {
+				options = append(options, slack.MsgOptionTS(event.TimeStamp))
 			}
-			if event.User == botUser || (event.ChannelType == "channel" && event.ThreadTimeStamp == "") {
+		} else {
+			params := &slack.GetConversationRepliesParameters{
+				ChannelID: event.Channel,
+				Timestamp: event.ThreadTimeStamp,
+			}
+			answer := generateChatAnswer(ctx, api, params, model, prompt)
+			if answer == "" {
 				return
 			}
-			prompt := strings.TrimSpace(reMention.ReplaceAllLiteralString(event.Text, ""))
-			var options []slack.MsgOption
-			if event.ThreadTimeStamp == "" {
-				answer := generateAnswer(ctx, model, prompt)
-				if answer == "" {
-					return
-				}
-				options = append(options, slack.MsgOptionText(answer, false))
-				if reMention.MatchString(event.Text) {
-					options = append(options, slack.MsgOptionTS(event.TimeStamp))
-				}
-			} else {
-				params := &slack.GetConversationRepliesParameters{
-					ChannelID: event.Channel,
-					Timestamp: event.ThreadTimeStamp,
-				}
-				answer := generateChatAnswer(ctx, api, params, model, prompt)
-				if answer == "" {
-					return
-				}
-				options = append(options, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.ThreadTimeStamp))
-			}
-			api.PostMessageContext(*ctx, event.Channel, options...)
-		default:
-			fmt.Println("Unsupported innerEvent type:", apiEvent.InnerEvent.Type)
+			options = append(options, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.ThreadTimeStamp))
 		}
+		api.PostMessageContext(*ctx, event.Channel, options...)
 	default:
-		fmt.Println("Unsupported apiEvent type:", apiEvent.Type)
+		fmt.Println("Unsupported innerEvent type:", event.Type)
 	}
 }
 
