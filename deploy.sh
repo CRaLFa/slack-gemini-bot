@@ -27,12 +27,12 @@ deploy_sub () {
 
 main () {
 	[[ $# -lt 1 || "$1" = 'pub' ]] && {
-		echo -e 'Deploy slack-gemini-pub function...\n'
+		echo -e 'Start deploying slack-gemini-pub function...\n'
 		deploy_pub
 		echo
 	}
 	[[ $# -lt 1 || "$1" = 'sub' ]] && {
-		echo -e 'Deploy slack-gemini-sub function...\n'
+		echo -e 'Start deploying slack-gemini-sub function...\n'
 		deploy_sub
 	}
 }
