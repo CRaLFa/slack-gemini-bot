@@ -37,7 +37,6 @@ var (
 	slackBotToken string
 	geminiApiKey  string
 	isDebug       bool
-	reMention     = regexp.MustCompile(`<@\w+>`)
 	botUser       string
 )
 
@@ -88,6 +87,7 @@ func SlackGemini(ctx context.Context, e event.Event) error {
 }
 
 func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
+	reMention := regexp.MustCompile(`<@\w+>`)
 	switch slackevents.EventsAPIType(event.Type) {
 	case slackevents.AppMention:
 		if isDebug {
@@ -98,7 +98,7 @@ func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client,
 		if answer == "" {
 			return
 		}
-		api.PostMessageContext(*ctx, event.Channel, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.TimeStamp))
+		api.PostMessageContext(*ctx, event.Channel, *createBlocks(answer), slack.MsgOptionTS(event.TimeStamp))
 	case slackevents.Message:
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", event)
@@ -110,7 +110,7 @@ func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client,
 			if answer == "" {
 				return
 			}
-			options = append(options, slack.MsgOptionText(answer, false))
+			options = append(options, *createBlocks(answer))
 			if reMention.MatchString(event.Text) {
 				options = append(options, slack.MsgOptionTS(event.TimeStamp))
 			}
@@ -123,7 +123,7 @@ func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client,
 			if answer == "" {
 				return
 			}
-			options = append(options, slack.MsgOptionText(answer, false), slack.MsgOptionTS(event.ThreadTimeStamp))
+			options = append(options, *createBlocks(answer), slack.MsgOptionTS(event.ThreadTimeStamp))
 		}
 		api.PostMessageContext(*ctx, event.Channel, options...)
 	default:
@@ -176,6 +176,12 @@ func generateChatAnswer(
 	return joinResponse(res)
 }
 
+func createBlocks(text string) *slack.MsgOption {
+	textBlock := slack.NewTextBlockObject(slack.MarkdownType, text, false, false)
+	blocks := slack.MsgOptionBlocks(slack.NewSectionBlock(textBlock, nil, nil))
+	return &blocks
+}
+
 func createChatHistory(msgs []slack.Message) []*genai.Content {
 	getRole := func(msg slack.Message) string {
 		if msg.User == botUser {
@@ -198,11 +204,20 @@ func createChatHistory(msgs []slack.Message) []*genai.Content {
 }
 
 func joinResponse(res *genai.GenerateContentResponse) string {
+	reList := regexp.MustCompile(`(\n*\s*)\* `)
+	replaceMarkdown := func(s string) string {
+		if isDebug {
+			fmt.Printf("%#v\n", s)
+		}
+		s = reList.ReplaceAllString(s, "${1}- ")
+		s = strings.Replace(s, "**", "*", -1)
+		return s
+	}
 	var buf []string
 	for _, cand := range res.Candidates {
 		if cand != nil {
 			for _, part := range cand.Content.Parts {
-				buf = append(buf, fmt.Sprintf("%v", part))
+				buf = append(buf, replaceMarkdown(fmt.Sprintf("%v", part)))
 			}
 		}
 	}
