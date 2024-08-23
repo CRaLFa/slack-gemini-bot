@@ -83,11 +83,11 @@ func SlackGemini(ctx context.Context, e event.Event) error {
 	defer gemini.Close()
 	model := gemini.GenerativeModel("gemini-1.5-flash")
 
-	processApiEvent(&event, &ctx, api, model)
+	processEvent(&event, &ctx, api, model)
 	return nil
 }
 
-func processApiEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
+func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
 	switch slackevents.EventsAPIType(event.Type) {
 	case slackevents.AppMention:
 		if isDebug {
@@ -202,7 +202,7 @@ func joinResponse(res *genai.GenerateContentResponse) string {
 	for _, cand := range res.Candidates {
 		if cand != nil {
 			for _, part := range cand.Content.Parts {
-				buf = append(buf, fmt.Sprintf("%s", part))
+				buf = append(buf, fmt.Sprintf("%v", part))
 			}
 		}
 	}

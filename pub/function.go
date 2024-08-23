@@ -94,30 +94,30 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 		fmt.Println("Unsupported event type:", event.Type)
 		return nil
 	}
-	apiInnerEvent := ApiInnerEvent{}
+	e := ApiInnerEvent{}
 	switch innerEvent := event.InnerEvent.Data.(type) {
 	case *slackevents.AppMentionEvent:
-		apiInnerEvent.Type = innerEvent.Type
-		apiInnerEvent.User = innerEvent.User
-		apiInnerEvent.Text = innerEvent.Text
-		apiInnerEvent.TimeStamp = innerEvent.TimeStamp
-		apiInnerEvent.Channel = innerEvent.Channel
+		e.Type = innerEvent.Type
+		e.User = innerEvent.User
+		e.Text = innerEvent.Text
+		e.TimeStamp = innerEvent.TimeStamp
+		e.Channel = innerEvent.Channel
 	case *slackevents.MessageEvent:
 		if innerEvent.ChannelType == "channel" && innerEvent.ThreadTimeStamp == "" {
 			return nil
 		}
-		apiInnerEvent.Type = innerEvent.Type
-		apiInnerEvent.User = innerEvent.User
-		apiInnerEvent.Text = innerEvent.Text
-		apiInnerEvent.TimeStamp = innerEvent.TimeStamp
-		apiInnerEvent.ThreadTimeStamp = innerEvent.ThreadTimeStamp
-		apiInnerEvent.Channel = innerEvent.Channel
-		apiInnerEvent.ChannelType = innerEvent.ChannelType
+		e.Type = innerEvent.Type
+		e.User = innerEvent.User
+		e.Text = innerEvent.Text
+		e.TimeStamp = innerEvent.TimeStamp
+		e.ThreadTimeStamp = innerEvent.ThreadTimeStamp
+		e.Channel = innerEvent.Channel
+		e.ChannelType = innerEvent.ChannelType
 	default:
 		fmt.Println("Unsupported innerEvent type:", event.InnerEvent.Type)
 		return nil
 	}
-	return &apiInnerEvent
+	return &e
 }
 
 func publishTopic(client *pubsub.Client, ctx *context.Context, innerEvent *ApiInnerEvent) error {
