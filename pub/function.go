@@ -125,11 +125,9 @@ func publishTopic(client *pubsub.Client, ctx *context.Context, innerEvent *ApiIn
 	if err := gob.NewEncoder(buf).Encode(innerEvent); err != nil {
 		return err
 	}
-
 	result := client.Topic(topicId).Publish(*ctx, &pubsub.Message{
 		Data: buf.Bytes(),
 	})
-
 	msgId, err := result.Get(*ctx)
 	if err != nil {
 		return err
