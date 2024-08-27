@@ -110,7 +110,7 @@ func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client,
 		var options []slack.MsgOption
 		if event.ThreadTimeStamp == "" {
 			// メンションもしくはダイレクトメッセージ
-			isMentionToBot := strings.Index(event.Text, mention) > -1
+			isMentionToBot := strings.Contains(event.Text, mention)
 			if event.ChannelType == slack.TYPE_CHANNEL && !isMentionToBot {
 				return
 			}
@@ -180,7 +180,7 @@ func generateChatAnswer(
 		}
 	}
 	chat := model.StartChat()
-	chat.History = createChatHistory(msgs)
+	chat.History = createChatHistory(ctx, msgs)
 	parts := []genai.Part{genai.Text(prompt)}
 	if blob := fetchFile(ctx, fileUrl); blob != nil {
 		parts = append(parts, *blob)
@@ -226,7 +226,7 @@ func createBlocks(text string) *slack.MsgOption {
 	return &blocks
 }
 
-func createChatHistory(msgs []slack.Message) []*genai.Content {
+func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Content {
 	getRole := func(msg slack.Message) string {
 		if msg.User == botUser {
 			return "model"
@@ -236,13 +236,16 @@ func createChatHistory(msgs []slack.Message) []*genai.Content {
 	}
 	history := []*genai.Content{}
 	for _, msg := range msgs[:len(msgs)-1] {
-		content := &genai.Content{
-			Parts: []genai.Part{
-				genai.Text(msg.Text),
-			},
-			Role: getRole(msg),
+		parts := []genai.Part{genai.Text(msg.Text)}
+		if len(msg.Files) > 0 {
+			if blob := fetchFile(ctx, msg.Files[0].URLPrivateDownload); blob != nil {
+				parts = append(parts, *blob)
+			}
 		}
-		history = append(history, content)
+		history = append(history, &genai.Content{
+			Parts: parts,
+			Role:  getRole(msg),
+		})
 	}
 	return history
 }
