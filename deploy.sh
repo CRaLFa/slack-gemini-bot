@@ -6,7 +6,7 @@ deploy_pub () {
 		--runtime=go122 \
 		--region=asia-northeast1 \
 		--source=./pub \
-		--entry-point=SlackGemini \
+		--entry-point=Publish \
 		--trigger-http \
 		--allow-unauthenticated \
 		--env-vars-file .env.yaml \
@@ -19,7 +19,7 @@ deploy_sub () {
 		--runtime=go122 \
 		--region=asia-northeast1 \
 		--source=./sub \
-		--entry-point=SlackGemini \
+		--entry-point=Subscribe \
 		--trigger-topic=slack-gemini \
 		--env-vars-file .env.yaml \
 		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com

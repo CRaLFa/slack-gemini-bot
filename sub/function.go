@@ -38,10 +38,10 @@ func init() {
 	geminiApiKey = os.Getenv("GEMINI_API_KEY")
 	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
-	functions.CloudEvent("SlackGemini", SlackGemini)
+	functions.CloudEvent("Subscribe", Subscribe)
 }
 
-func SlackGemini(ctx context.Context, e event.Event) error {
+func Subscribe(ctx context.Context, e event.Event) error {
 	var msg MessagePublishedData
 	if err := e.DataAs(&msg); err != nil {
 		fmt.Println(err)

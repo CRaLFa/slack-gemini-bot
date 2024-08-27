@@ -4,6 +4,7 @@ go 1.22.5
 
 require (
 	cloud.google.com/go/pubsub v1.42.0
+	github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240827094611-d9768fdfe0c0
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.0
 	github.com/cloudevents/sdk-go/v2 v2.15.2
 	github.com/google/generative-ai-go v0.17.0

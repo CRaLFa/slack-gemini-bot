@@ -40,10 +40,10 @@ func init() {
 	topicId = os.Getenv("TOPIC_ID")
 	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
-	functions.HTTP("SlackGemini", SlackGemini)
+	functions.HTTP("Publish", Publish)
 }
 
-func SlackGemini(w http.ResponseWriter, r *http.Request) {
+func Publish(w http.ResponseWriter, r *http.Request) {
 	apiEvent := handleRequest(w, r)
 	if apiEvent == nil {
 		return

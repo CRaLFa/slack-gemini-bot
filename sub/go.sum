@@ -18,6 +18,8 @@ cloud.google.com/go/longrunning v0.5.11/go.mod h1:rDn7//lmlfWV1Dx6IB4RatCPenTwwm
 cloud.google.com/go/pubsub v1.42.0 h1:PVTbzorLryFL5ue8esTS2BfehUs0ahyNOY9qcd+HMOs=
 cloud.google.com/go/pubsub v1.42.0/go.mod h1:KADJ6s4MbTwhXmse/50SebEhE4SmUwHi48z3/dHar1Y=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
+github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240827094611-d9768fdfe0c0 h1:qmYsQvL6q/z4N6Bf+EdZjwc1sIJqkCJcQufk+8pKpOM=
+github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240827094611-d9768fdfe0c0/go.mod h1:B0AfW0ZWntifMd8r6nAyPHA5Z5dNfuT9rh+TzOl2A/A=
 github.com/GoogleCloudPlatform/functions-framework-go v1.9.0 h1:Fq0sKuCyyFFVFm1r6fEQJ4TRnbbhXP9Q6MEUX+UAd/0=
 github.com/GoogleCloudPlatform/functions-framework-go v1.9.0/go.mod h1:8Ww7VHPCGKqCfZOCT9INIiakNgGQPGRfL4U4yy5F5Kc=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
