@@ -207,7 +207,7 @@ func joinResponse(res *genai.GenerateContentResponse) string {
 	reList := regexp.MustCompile(`(\n+\s*)\* `)
 	replaceMarkdown := func(s string) string {
 		if isDebug {
-			fmt.Printf("%#v\n", s)
+			fmt.Printf("%q\n", s)
 		}
 		s = reList.ReplaceAllString(s, "${1}- ")
 		s = strings.Replace(s, "**", "*", -1)
