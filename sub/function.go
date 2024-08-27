@@ -91,8 +91,8 @@ func SlackGemini(ctx context.Context, e event.Event) error {
 
 func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
 	mention := "<@" + botUser + ">"
-	switch slackevents.EventsAPIType(event.Type) {
-	case slackevents.AppMention:
+	switch event.Type {
+	case string(slackevents.AppMention):
 		if isDebug {
 			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
@@ -102,7 +102,7 @@ func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client,
 			return
 		}
 		api.PostMessageContext(*ctx, event.Channel, *createBlocks(answer), slack.MsgOptionTS(event.TimeStamp))
-	case slackevents.Message:
+	case string(slackevents.Message):
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", event)
 		}
