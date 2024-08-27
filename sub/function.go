@@ -129,6 +129,12 @@ func processEvent(event *pub.ApiInnerEvent, ctx *context.Context, api *slack.Cli
 	}
 }
 
+func createBlocks(text string) *slack.MsgOption {
+	textBlock := slack.NewTextBlockObject(slack.MarkdownType, text, false, false)
+	blocks := slack.MsgOptionBlocks(slack.NewSectionBlock(textBlock, nil, nil))
+	return &blocks
+}
+
 func generateAnswer(ctx *context.Context, model *genai.GenerativeModel, prompt string, fileUrl string) string {
 	if prompt == "" {
 		return ""
@@ -210,10 +216,25 @@ func fetchFile(ctx *context.Context, url string) *genai.Blob {
 	}
 }
 
-func createBlocks(text string) *slack.MsgOption {
-	textBlock := slack.NewTextBlockObject(slack.MarkdownType, text, false, false)
-	blocks := slack.MsgOptionBlocks(slack.NewSectionBlock(textBlock, nil, nil))
-	return &blocks
+func joinResponse(res *genai.GenerateContentResponse) string {
+	reList := regexp.MustCompile(`(\n+\s*)\* `)
+	replaceMarkdown := func(s string) string {
+		if isDebug {
+			fmt.Printf("%q\n", s)
+		}
+		s = reList.ReplaceAllString(s, "${1}- ")
+		s = strings.ReplaceAll(s, "**", "*")
+		return s
+	}
+	var buf []string
+	for _, cand := range res.Candidates {
+		if cand != nil {
+			for _, part := range cand.Content.Parts {
+				buf = append(buf, replaceMarkdown(fmt.Sprintf("%v", part)))
+			}
+		}
+	}
+	return strings.Join(buf, "\n")
 }
 
 func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Content {
@@ -238,25 +259,4 @@ func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Cont
 		})
 	}
 	return history
-}
-
-func joinResponse(res *genai.GenerateContentResponse) string {
-	reList := regexp.MustCompile(`(\n+\s*)\* `)
-	replaceMarkdown := func(s string) string {
-		if isDebug {
-			fmt.Printf("%q\n", s)
-		}
-		s = reList.ReplaceAllString(s, "${1}- ")
-		s = strings.Replace(s, "**", "*", -1)
-		return s
-	}
-	var buf []string
-	for _, cand := range res.Candidates {
-		if cand != nil {
-			for _, part := range cand.Content.Parts {
-				buf = append(buf, replaceMarkdown(fmt.Sprintf("%v", part)))
-			}
-		}
-	}
-	return strings.Join(buf, "\n")
 }

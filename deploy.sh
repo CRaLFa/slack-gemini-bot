@@ -1,6 +1,7 @@
 #!/bin/bash
 
 deploy_pub () {
+	(cd pub && go mod tidy)
 	gcloud functions deploy slack-gemini-pub \
 		--gen2 \
 		--runtime=go122 \
@@ -14,6 +15,7 @@ deploy_pub () {
 }
 
 deploy_sub () {
+	(cd sub && go mod tidy)
 	gcloud functions deploy slack-gemini-sub \
 		--gen2 \
 		--runtime=go122 \
@@ -26,6 +28,7 @@ deploy_sub () {
 }
 
 main () {
+	cd $(dirname "$0")
 	[[ $# -lt 1 || "$1" = 'pub' ]] && {
 		echo -e 'Start deploying slack-gemini-pub function...\n'
 		deploy_pub
