@@ -9,9 +9,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
 
@@ -23,16 +26,19 @@ type ApiInnerEvent struct {
 	Text            string
 	TimeStamp       string
 	ThreadTimeStamp string
+	FileUrl         string
 }
 
 var (
 	projectId string
 	topicId   string
+	isDebug   bool
 )
 
 func init() {
 	projectId = os.Getenv("PROJECT_ID")
 	topicId = os.Getenv("TOPIC_ID")
+	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
 	functions.HTTP("SlackGemini", SlackGemini)
 }
@@ -45,7 +51,6 @@ func SlackGemini(w http.ResponseWriter, r *http.Request) {
 
 	innerEvent := toApiInnerEvent(apiEvent)
 	if innerEvent == nil {
-		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -66,8 +71,10 @@ func SlackGemini(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAPIEvent {
+	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		fmt.Println("No request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return nil
 	}
@@ -97,14 +104,16 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 	e := ApiInnerEvent{}
 	switch innerEvent := event.InnerEvent.Data.(type) {
 	case *slackevents.AppMentionEvent:
-		e.Type = innerEvent.Type
-		e.User = innerEvent.User
-		e.Text = innerEvent.Text
-		e.TimeStamp = innerEvent.TimeStamp
-		e.Channel = innerEvent.Channel
+		if isDebug {
+			fmt.Printf("AppMentionEvent: %#v\n", innerEvent)
+		}
+		return nil
 	case *slackevents.MessageEvent:
-		if innerEvent.ChannelType == "channel" && innerEvent.ThreadTimeStamp == "" {
+		if innerEvent.ChannelType == slack.TYPE_CHANNEL && innerEvent.ThreadTimeStamp == "" && !regexp.MustCompile(`<@\w+>`).MatchString(innerEvent.Text) {
 			return nil
+		}
+		if isDebug {
+			fmt.Printf("MessageEvent: %#v\n", innerEvent)
 		}
 		e.Type = innerEvent.Type
 		e.User = innerEvent.User
@@ -113,6 +122,9 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 		e.ThreadTimeStamp = innerEvent.ThreadTimeStamp
 		e.Channel = innerEvent.Channel
 		e.ChannelType = innerEvent.ChannelType
+		if len(innerEvent.Files) > 0 {
+			e.FileUrl = innerEvent.Files[0].URLPrivateDownload
+		}
 	default:
 		fmt.Println("Unsupported innerEvent type:", event.InnerEvent.Type)
 		return nil
