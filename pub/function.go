@@ -26,7 +26,7 @@ type ApiInnerEvent struct {
 	Text            string
 	TimeStamp       string
 	ThreadTimeStamp string
-	FileUrl         string
+	FileUrls        []string
 }
 
 var (
@@ -123,8 +123,8 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 			Channel:         innerEvent.Channel,
 			ChannelType:     innerEvent.ChannelType,
 		}
-		if len(innerEvent.Files) > 0 {
-			e.FileUrl = innerEvent.Files[0].URLPrivateDownload
+		for _, file := range innerEvent.Files {
+			e.FileUrls = append(e.FileUrls, file.URLPrivateDownload)
 		}
 		return &e
 	default:
