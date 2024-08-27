@@ -101,7 +101,6 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 		fmt.Println("Unsupported event type:", event.Type)
 		return nil
 	}
-	e := ApiInnerEvent{}
 	switch innerEvent := event.InnerEvent.Data.(type) {
 	case *slackevents.AppMentionEvent:
 		if isDebug {
@@ -115,21 +114,23 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", innerEvent)
 		}
-		e.Type = innerEvent.Type
-		e.User = innerEvent.User
-		e.Text = innerEvent.Text
-		e.TimeStamp = innerEvent.TimeStamp
-		e.ThreadTimeStamp = innerEvent.ThreadTimeStamp
-		e.Channel = innerEvent.Channel
-		e.ChannelType = innerEvent.ChannelType
+		e := ApiInnerEvent{
+			Type:            innerEvent.Type,
+			User:            innerEvent.User,
+			Text:            innerEvent.Text,
+			TimeStamp:       innerEvent.TimeStamp,
+			ThreadTimeStamp: innerEvent.ThreadTimeStamp,
+			Channel:         innerEvent.Channel,
+			ChannelType:     innerEvent.ChannelType,
+		}
 		if len(innerEvent.Files) > 0 {
 			e.FileUrl = innerEvent.Files[0].URLPrivateDownload
 		}
+		return &e
 	default:
 		fmt.Println("Unsupported innerEvent type:", event.InnerEvent.Type)
 		return nil
 	}
-	return &e
 }
 
 func publishTopic(client *pubsub.Client, ctx *context.Context, innerEvent *ApiInnerEvent) error {
