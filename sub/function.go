@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/CRaLFa/slack-gemini-bot/pub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 	"github.com/cloudevents/sdk-go/v2/event"
 	"github.com/google/generative-ai-go/genai"
@@ -23,17 +24,6 @@ import (
 
 type MessagePublishedData struct {
 	Message pubsub.Message
-}
-
-type ApiInnerEvent struct {
-	Type            string
-	Channel         string
-	ChannelType     string
-	User            string
-	Text            string
-	TimeStamp       string
-	ThreadTimeStamp string
-	FileUrl         string
 }
 
 var (
@@ -60,7 +50,7 @@ func SlackGemini(ctx context.Context, e event.Event) error {
 	fmt.Printf("Received a message: %s\n", msg.Message.ID)
 
 	buf := bytes.NewBuffer(msg.Message.Data)
-	var event ApiInnerEvent
+	var event pub.ApiInnerEvent
 	if err := gob.NewDecoder(buf).Decode(&event); err != nil {
 		fmt.Println(err)
 		return err
@@ -89,7 +79,7 @@ func SlackGemini(ctx context.Context, e event.Event) error {
 	return nil
 }
 
-func processEvent(event *ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
+func processEvent(event *pub.ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
 	mention := "<@" + botUser + ">"
 	switch event.Type {
 	case string(slackevents.AppMention):
