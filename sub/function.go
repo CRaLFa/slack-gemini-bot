@@ -195,37 +195,16 @@ func generateChatAnswer(
 }
 
 func fetchFiles(ctx context.Context, urls []string) []genai.Blob {
-	var wg sync.WaitGroup
 	ch := make(chan []byte)
-	for _, url := range urls {
-		wg.Add(1)
-		go func(ctx context.Context, url string) {
-			defer wg.Done()
-			if url == "" {
-				return
-			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			req.Header.Set("Authorization", "Bearer "+slackBotToken)
-			res, err := http.DefaultClient.Do(req)
-			if err != nil || res.StatusCode != http.StatusOK {
-				fmt.Println("Failed to fetch file data:", res.Status)
-				return
-			}
-			defer res.Body.Close()
-			data, err := io.ReadAll(res.Body)
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			ch <- data
-		}(ctx, url)
-	}
-	wg.Wait()
-	close(ch)
+	go func() {
+		var wg sync.WaitGroup
+		for _, url := range urls {
+			wg.Add(1)
+			go fetchFile(ctx, url, &wg, ch)
+		}
+		wg.Wait()
+		close(ch)
+	}()
 	var blobs []genai.Blob
 	for data := range ch {
 		blobs = append(blobs, genai.Blob{
@@ -265,7 +244,7 @@ func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Conte
 			return "user"
 		}
 	}
-	history := []*genai.Content{}
+	var history []*genai.Content
 	for _, msg := range msgs[:len(msgs)-1] {
 		parts := []genai.Part{genai.Text(msg.Text)}
 		if len(msg.Files) > 0 {
@@ -285,4 +264,29 @@ func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Conte
 		})
 	}
 	return history
+}
+
+func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan []byte) {
+	defer wg.Done()
+	if url == "" {
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+slackBotToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil || res.StatusCode != http.StatusOK {
+		fmt.Println("Failed to fetch file data:", res.Status)
+		return
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	ch <- data
 }
