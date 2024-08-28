@@ -229,7 +229,12 @@ func joinResponse(res *genai.GenerateContentResponse) string {
 	for _, cand := range res.Candidates {
 		if cand != nil {
 			for _, part := range cand.Content.Parts {
-				buf = append(buf, replaceMarkdown(fmt.Sprintf("%v", part)))
+				switch p := part.(type) {
+				case genai.Text:
+					buf = append(buf, replaceMarkdown(string(p)))
+				default:
+					continue
+				}
 			}
 		}
 	}
