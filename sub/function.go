@@ -142,7 +142,7 @@ func generateAnswer(ctx *context.Context, model *genai.GenerativeModel, prompt s
 	}
 	parts := []genai.Part{genai.Text(prompt)}
 	if blobs := fetchFiles(ctx, fileUrls); blobs != nil {
-		for _, blob := range *blobs {
+		for _, blob := range blobs {
 			parts = append(parts, blob)
 		}
 	}
@@ -182,7 +182,7 @@ func generateChatAnswer(
 	chat.History = createChatHistory(ctx, msgs)
 	parts := []genai.Part{genai.Text(prompt)}
 	if blobs := fetchFiles(ctx, fileUrls); blobs != nil {
-		for _, blob := range *blobs {
+		for _, blob := range blobs {
 			parts = append(parts, blob)
 		}
 	}
@@ -194,7 +194,7 @@ func generateChatAnswer(
 	return joinResponse(res)
 }
 
-func fetchFiles(ctx *context.Context, urls []string) *[]genai.Blob {
+func fetchFiles(ctx *context.Context, urls []string) []genai.Blob {
 	var wg sync.WaitGroup
 	ch := make(chan []byte)
 	for _, url := range urls {
@@ -233,7 +233,7 @@ func fetchFiles(ctx *context.Context, urls []string) *[]genai.Blob {
 			Data:     data,
 		})
 	}
-	return &blobs
+	return blobs
 }
 
 func joinResponse(res *genai.GenerateContentResponse) string {
@@ -274,7 +274,7 @@ func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Cont
 				urls = append(urls, file.URLPrivateDownload)
 			}
 			if blobs := fetchFiles(ctx, urls); blobs != nil {
-				for _, blob := range *blobs {
+				for _, blob := range blobs {
 					parts = append(parts, blob)
 				}
 			}
