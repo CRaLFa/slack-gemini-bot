@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/CRaLFa/slack-gemini-bot/pub"
@@ -75,11 +76,11 @@ func Subscribe(ctx context.Context, e event.Event) error {
 	defer gemini.Close()
 	model := gemini.GenerativeModel("gemini-1.5-flash")
 
-	processEvent(&event, &ctx, api, model)
+	processEvent(ctx, &event, api, model)
 	return nil
 }
 
-func processEvent(event *pub.ApiInnerEvent, ctx *context.Context, api *slack.Client, model *genai.GenerativeModel) {
+func processEvent(ctx context.Context, event *pub.ApiInnerEvent, api *slack.Client, model *genai.GenerativeModel) {
 	mention := "<@" + botUser + ">"
 	switch event.Type {
 	case string(slackevents.AppMention):
@@ -87,11 +88,11 @@ func processEvent(event *pub.ApiInnerEvent, ctx *context.Context, api *slack.Cli
 			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
 		prompt := strings.TrimSpace(strings.ReplaceAll(event.Text, mention, ""))
-		answer := generateAnswer(ctx, model, prompt, event.FileUrl)
+		answer := generateAnswer(ctx, model, prompt, event.FileUrls)
 		if answer == "" {
 			return
 		}
-		api.PostMessageContext(*ctx, event.Channel, *createBlocks(answer), slack.MsgOptionTS(event.TimeStamp))
+		api.PostMessageContext(ctx, event.Channel, *createBlocks(answer), slack.MsgOptionTS(event.TimeStamp))
 	case string(slackevents.Message):
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", event)
@@ -104,7 +105,7 @@ func processEvent(event *pub.ApiInnerEvent, ctx *context.Context, api *slack.Cli
 			if event.ChannelType == slack.TYPE_CHANNEL && !isMentionToBot {
 				return
 			}
-			answer := generateAnswer(ctx, model, prompt, event.FileUrl)
+			answer := generateAnswer(ctx, model, prompt, event.FileUrls)
 			if answer == "" {
 				return
 			}
@@ -117,13 +118,13 @@ func processEvent(event *pub.ApiInnerEvent, ctx *context.Context, api *slack.Cli
 				ChannelID: event.Channel,
 				Timestamp: event.ThreadTimeStamp,
 			}
-			answer := generateChatAnswer(ctx, api, params, model, prompt, event.FileUrl)
+			answer := generateChatAnswer(ctx, api, params, model, prompt, event.FileUrls)
 			if answer == "" {
 				return
 			}
 			options = append(options, *createBlocks(answer), slack.MsgOptionTS(event.ThreadTimeStamp))
 		}
-		api.PostMessageContext(*ctx, event.Channel, options...)
+		api.PostMessageContext(ctx, event.Channel, options...)
 	default:
 		fmt.Println("Unsupported innerEvent type:", event.Type)
 	}
@@ -135,15 +136,17 @@ func createBlocks(text string) *slack.MsgOption {
 	return &blocks
 }
 
-func generateAnswer(ctx *context.Context, model *genai.GenerativeModel, prompt string, fileUrl string) string {
+func generateAnswer(ctx context.Context, model *genai.GenerativeModel, prompt string, fileUrls []string) string {
 	if prompt == "" {
 		return ""
 	}
 	parts := []genai.Part{genai.Text(prompt)}
-	if blob := fetchFile(ctx, fileUrl); blob != nil {
-		parts = append(parts, *blob)
+	if blobs := fetchFiles(ctx, fileUrls); blobs != nil {
+		for _, blob := range blobs {
+			parts = append(parts, blob)
+		}
 	}
-	res, err := model.GenerateContent(*ctx, parts...)
+	res, err := model.GenerateContent(ctx, parts...)
 	if err != nil {
 		fmt.Println("Failed to get Gemini's response:", err)
 		return ""
@@ -152,17 +155,17 @@ func generateAnswer(ctx *context.Context, model *genai.GenerativeModel, prompt s
 }
 
 func generateChatAnswer(
-	ctx *context.Context,
+	ctx context.Context,
 	api *slack.Client,
 	params *slack.GetConversationRepliesParameters,
 	model *genai.GenerativeModel,
 	prompt string,
-	fileUrl string,
+	fileUrls []string,
 ) string {
 	if prompt == "" {
 		return ""
 	}
-	msgs, _, _, err := api.GetConversationRepliesContext(*ctx, params)
+	msgs, _, _, err := api.GetConversationRepliesContext(ctx, params)
 	if err != nil {
 		fmt.Println("Failed to get thread content:", err)
 		return ""
@@ -178,10 +181,12 @@ func generateChatAnswer(
 	chat := model.StartChat()
 	chat.History = createChatHistory(ctx, msgs)
 	parts := []genai.Part{genai.Text(prompt)}
-	if blob := fetchFile(ctx, fileUrl); blob != nil {
-		parts = append(parts, *blob)
+	if blobs := fetchFiles(ctx, fileUrls); blobs != nil {
+		for _, blob := range blobs {
+			parts = append(parts, blob)
+		}
 	}
-	res, err := chat.SendMessage(*ctx, parts...)
+	res, err := chat.SendMessage(ctx, parts...)
 	if err != nil {
 		fmt.Println("Failed to get Gemini's response:", err)
 		return ""
@@ -189,31 +194,25 @@ func generateChatAnswer(
 	return joinResponse(res)
 }
 
-func fetchFile(ctx *context.Context, url string) *genai.Blob {
-	if url == "" {
-		return nil
+func fetchFiles(ctx context.Context, urls []string) []genai.Blob {
+	ch := make(chan []byte)
+	go func() {
+		var wg sync.WaitGroup
+		for _, url := range urls {
+			wg.Add(1)
+			go fetchFile(ctx, url, &wg, ch)
+		}
+		wg.Wait()
+		close(ch)
+	}()
+	var blobs []genai.Blob
+	for data := range ch {
+		blobs = append(blobs, genai.Blob{
+			MIMEType: http.DetectContentType(data),
+			Data:     data,
+		})
 	}
-	req, err := http.NewRequestWithContext(*ctx, http.MethodGet, url, nil)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	req.Header.Set("Authorization", "Bearer "+slackBotToken)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil || res.StatusCode != http.StatusOK {
-		fmt.Println("Failed to fetch file data:", res.Status)
-		return nil
-	}
-	defer res.Body.Close()
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	return &genai.Blob{
-		MIMEType: http.DetectContentType(data),
-		Data:     data,
-	}
+	return blobs
 }
 
 func joinResponse(res *genai.GenerateContentResponse) string {
@@ -237,7 +236,7 @@ func joinResponse(res *genai.GenerateContentResponse) string {
 	return strings.Join(buf, "\n")
 }
 
-func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Content {
+func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Content {
 	getRole := func(msg slack.Message) string {
 		if msg.User == botUser {
 			return "model"
@@ -245,12 +244,18 @@ func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Cont
 			return "user"
 		}
 	}
-	history := []*genai.Content{}
+	var history []*genai.Content
 	for _, msg := range msgs[:len(msgs)-1] {
 		parts := []genai.Part{genai.Text(msg.Text)}
 		if len(msg.Files) > 0 {
-			if blob := fetchFile(ctx, msg.Files[0].URLPrivateDownload); blob != nil {
-				parts = append(parts, *blob)
+			var urls []string
+			for _, file := range msg.Files {
+				urls = append(urls, file.URLPrivateDownload)
+			}
+			if blobs := fetchFiles(ctx, urls); blobs != nil {
+				for _, blob := range blobs {
+					parts = append(parts, blob)
+				}
 			}
 		}
 		history = append(history, &genai.Content{
@@ -259,4 +264,29 @@ func createChatHistory(ctx *context.Context, msgs []slack.Message) []*genai.Cont
 		})
 	}
 	return history
+}
+
+func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan []byte) {
+	defer wg.Done()
+	if url == "" {
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+slackBotToken)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil || res.StatusCode != http.StatusOK {
+		fmt.Println("Failed to fetch file data:", res.Status)
+		return
+	}
+	defer res.Body.Close()
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	ch <- data
 }
