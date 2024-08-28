@@ -29,14 +29,14 @@ type MessagePublishedData struct {
 
 var (
 	slackBotToken string
-	geminiApiKey  string
+	geminiAPIKey  string
 	isDebug       bool
 	botUser       string
 )
 
 func init() {
 	slackBotToken = os.Getenv("SLACK_BOT_TOKEN")
-	geminiApiKey = os.Getenv("GEMINI_API_KEY")
+	geminiAPIKey = os.Getenv("GEMINI_API_KEY")
 	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
 	functions.CloudEvent("Subscribe", Subscribe)
@@ -51,7 +51,7 @@ func Subscribe(ctx context.Context, e event.Event) error {
 	fmt.Printf("Received a message: %s\n", msg.Message.ID)
 
 	buf := bytes.NewBuffer(msg.Message.Data)
-	var event pub.ApiInnerEvent
+	var event pub.APIInnerEvent
 	if err := gob.NewDecoder(buf).Decode(&event); err != nil {
 		fmt.Println(err)
 		return err
@@ -68,7 +68,7 @@ func Subscribe(ctx context.Context, e event.Event) error {
 		return nil
 	}
 
-	gemini, err := genai.NewClient(ctx, option.WithAPIKey(geminiApiKey))
+	gemini, err := genai.NewClient(ctx, option.WithAPIKey(geminiAPIKey))
 	if err != nil {
 		fmt.Println(err)
 		return err
@@ -80,7 +80,7 @@ func Subscribe(ctx context.Context, e event.Event) error {
 	return nil
 }
 
-func processEvent(ctx context.Context, event *pub.ApiInnerEvent, api *slack.Client, model *genai.GenerativeModel) {
+func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Client, model *genai.GenerativeModel) {
 	mention := "<@" + botUser + ">"
 	switch event.Type {
 	case string(slackevents.AppMention):
@@ -88,7 +88,7 @@ func processEvent(ctx context.Context, event *pub.ApiInnerEvent, api *slack.Clie
 			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
 		prompt := strings.TrimSpace(strings.ReplaceAll(event.Text, mention, ""))
-		answer := generateAnswer(ctx, model, prompt, event.FileUrls)
+		answer := generateAnswer(ctx, model, prompt, event.FileURLs)
 		if answer == "" {
 			return
 		}
@@ -105,7 +105,7 @@ func processEvent(ctx context.Context, event *pub.ApiInnerEvent, api *slack.Clie
 			if event.ChannelType == slack.TYPE_CHANNEL && !isMentionToBot {
 				return
 			}
-			answer := generateAnswer(ctx, model, prompt, event.FileUrls)
+			answer := generateAnswer(ctx, model, prompt, event.FileURLs)
 			if answer == "" {
 				return
 			}
@@ -118,7 +118,7 @@ func processEvent(ctx context.Context, event *pub.ApiInnerEvent, api *slack.Clie
 				ChannelID: event.Channel,
 				Timestamp: event.ThreadTimeStamp,
 			}
-			answer := generateChatAnswer(ctx, api, params, model, prompt, event.FileUrls)
+			answer := generateChatAnswer(ctx, api, params, model, prompt, event.FileURLs)
 			if answer == "" {
 				return
 			}
@@ -136,12 +136,12 @@ func createBlocks(text string) *slack.MsgOption {
 	return &blocks
 }
 
-func generateAnswer(ctx context.Context, model *genai.GenerativeModel, prompt string, fileUrls []string) string {
+func generateAnswer(ctx context.Context, model *genai.GenerativeModel, prompt string, fileURLs []string) string {
 	if prompt == "" {
 		return ""
 	}
 	parts := []genai.Part{genai.Text(prompt)}
-	if blobs := fetchFiles(ctx, fileUrls); blobs != nil {
+	if blobs := fetchFiles(ctx, fileURLs); blobs != nil {
 		for _, blob := range blobs {
 			parts = append(parts, blob)
 		}
@@ -160,7 +160,7 @@ func generateChatAnswer(
 	params *slack.GetConversationRepliesParameters,
 	model *genai.GenerativeModel,
 	prompt string,
-	fileUrls []string,
+	fileURLs []string,
 ) string {
 	if prompt == "" {
 		return ""
@@ -181,7 +181,7 @@ func generateChatAnswer(
 	chat := model.StartChat()
 	chat.History = createChatHistory(ctx, msgs)
 	parts := []genai.Part{genai.Text(prompt)}
-	if blobs := fetchFiles(ctx, fileUrls); blobs != nil {
+	if blobs := fetchFiles(ctx, fileURLs); blobs != nil {
 		for _, blob := range blobs {
 			parts = append(parts, blob)
 		}

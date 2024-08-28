@@ -18,7 +18,7 @@ import (
 	"github.com/slack-go/slack/slackevents"
 )
 
-type ApiInnerEvent struct {
+type APIInnerEvent struct {
 	Type            string
 	Channel         string
 	ChannelType     string
@@ -26,18 +26,18 @@ type ApiInnerEvent struct {
 	Text            string
 	TimeStamp       string
 	ThreadTimeStamp string
-	FileUrls        []string
+	FileURLs        []string
 }
 
 var (
-	projectId string
-	topicId   string
+	projectID string
+	topicID   string
 	isDebug   bool
 )
 
 func init() {
-	projectId = os.Getenv("PROJECT_ID")
-	topicId = os.Getenv("TOPIC_ID")
+	projectID = os.Getenv("PROJECT_ID")
+	topicID = os.Getenv("TOPIC_ID")
 	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
 
 	functions.HTTP("Publish", Publish)
@@ -56,7 +56,7 @@ func Publish(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 
-	client, err := pubsub.NewClient(ctx, projectId)
+	client, err := pubsub.NewClient(ctx, projectID)
 	if err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -96,7 +96,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 	return &event
 }
 
-func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
+func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 	if event.Type != slackevents.CallbackEvent {
 		fmt.Println("Unsupported event type:", event.Type)
 		return nil
@@ -114,7 +114,7 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", innerEvent)
 		}
-		e := ApiInnerEvent{
+		e := APIInnerEvent{
 			Type:            innerEvent.Type,
 			User:            innerEvent.User,
 			Text:            innerEvent.Text,
@@ -124,7 +124,7 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 			ChannelType:     innerEvent.ChannelType,
 		}
 		for _, file := range innerEvent.Files {
-			e.FileUrls = append(e.FileUrls, file.URLPrivateDownload)
+			e.FileURLs = append(e.FileURLs, file.URLPrivateDownload)
 		}
 		return &e
 	default:
@@ -133,18 +133,18 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 	}
 }
 
-func publishTopic(ctx context.Context, client *pubsub.Client, innerEvent *ApiInnerEvent) error {
+func publishTopic(ctx context.Context, client *pubsub.Client, innerEvent *APIInnerEvent) error {
 	buf := bytes.NewBuffer(nil)
 	if err := gob.NewEncoder(buf).Encode(innerEvent); err != nil {
 		return err
 	}
-	result := client.Topic(topicId).Publish(ctx, &pubsub.Message{
+	result := client.Topic(topicID).Publish(ctx, &pubsub.Message{
 		Data: buf.Bytes(),
 	})
-	msgId, err := result.Get(ctx)
+	msgID, err := result.Get(ctx)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Published a message: %s\n", msgId)
+	fmt.Printf("Published a message: %s\n", msgID)
 	return nil
 }
