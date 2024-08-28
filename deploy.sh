@@ -15,7 +15,7 @@ deploy_pub () {
 }
 
 deploy_sub () {
-	(cd sub && go mod tidy && go get -u github.com/CRaLFa/slack-gemini-bot/pub)
+	(cd sub && go mod tidy)
 	gcloud functions deploy slack-gemini-sub \
 		--gen2 \
 		--runtime=go122 \

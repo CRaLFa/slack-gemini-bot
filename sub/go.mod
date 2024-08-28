@@ -4,7 +4,7 @@ go 1.22.5
 
 require (
 	cloud.google.com/go/pubsub v1.42.0
-	github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240828023033-463a60d0f977
+	github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240828031243-bf5e4f52e515
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.0
 	github.com/cloudevents/sdk-go/v2 v2.15.2
 	github.com/google/generative-ai-go v0.17.0
@@ -38,7 +38,6 @@ require (
 	go.opentelemetry.io/otel v1.29.0 // indirect
 	go.opentelemetry.io/otel/metric v1.29.0 // indirect
 	go.opentelemetry.io/otel/trace v1.29.0 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
