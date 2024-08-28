@@ -14,6 +14,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	"github.com/jinzhu/copier"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
@@ -114,15 +115,8 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", innerEvent)
 		}
-		e := APIInnerEvent{
-			Type:            innerEvent.Type,
-			User:            innerEvent.User,
-			Text:            innerEvent.Text,
-			TimeStamp:       innerEvent.TimeStamp,
-			ThreadTimeStamp: innerEvent.ThreadTimeStamp,
-			Channel:         innerEvent.Channel,
-			ChannelType:     innerEvent.ChannelType,
-		}
+		e := APIInnerEvent{}
+		copier.Copy(&e, &innerEvent)
 		for _, file := range innerEvent.Files {
 			e.FileURLs = append(e.FileURLs, file.URLPrivateDownload)
 		}
