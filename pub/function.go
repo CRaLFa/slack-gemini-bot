@@ -64,7 +64,7 @@ func Publish(w http.ResponseWriter, r *http.Request) {
 	}
 	defer client.Close()
 
-	if err := publishTopic(client, &ctx, innerEvent); err != nil {
+	if err := publishTopic(ctx, client, innerEvent); err != nil {
 		fmt.Println(err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
@@ -133,15 +133,15 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *ApiInnerEvent {
 	}
 }
 
-func publishTopic(client *pubsub.Client, ctx *context.Context, innerEvent *ApiInnerEvent) error {
+func publishTopic(ctx context.Context, client *pubsub.Client, innerEvent *ApiInnerEvent) error {
 	buf := bytes.NewBuffer(nil)
 	if err := gob.NewEncoder(buf).Encode(innerEvent); err != nil {
 		return err
 	}
-	result := client.Topic(topicId).Publish(*ctx, &pubsub.Message{
+	result := client.Topic(topicId).Publish(ctx, &pubsub.Message{
 		Data: buf.Bytes(),
 	})
-	msgId, err := result.Get(*ctx)
+	msgId, err := result.Get(ctx)
 	if err != nil {
 		return err
 	}
