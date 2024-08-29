@@ -10,7 +10,7 @@ deploy_pub () {
 		--entry-point=Publish \
 		--trigger-http \
 		--allow-unauthenticated \
-		--env-vars-file .env.yaml \
+		--env-vars-file=./.env.yaml \
 		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com
 }
 
@@ -23,7 +23,7 @@ deploy_sub () {
 		--source=./sub \
 		--entry-point=Subscribe \
 		--trigger-topic=slack-gemini \
-		--env-vars-file .env.yaml \
+		--env-vars-file=./.env.yaml \
 		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com
 }
 
