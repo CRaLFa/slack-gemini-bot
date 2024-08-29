@@ -83,14 +83,13 @@ func Subscribe(ctx context.Context, e event.Event) error {
 }
 
 func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Client, model *genai.GenerativeModel) {
-	mention := "<@" + botUser + ">"
 	switch event.Type {
 	case string(slackevents.AppMention):
 		if isDebug {
 			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
 		answer, blobs := generateAnswer(ctx, model, removeMention(event.Text), event.FileURLs)
-		if answer == "" {
+		if answer == "" && len(blobs) <= 0 {
 			return
 		}
 		if len(blobs) <= 0 {
@@ -105,12 +104,12 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 		}
 		if event.ThreadTimeStamp == "" {
 			// メンションもしくはダイレクトメッセージ
-			isMentionToBot := strings.Contains(event.Text, mention)
+			isMentionToBot := strings.Contains(event.Text, "<@"+botUser+">")
 			if event.ChannelType == slack.TYPE_CHANNEL && !isMentionToBot {
 				return
 			}
 			answer, blobs := generateAnswer(ctx, model, removeMention(event.Text), event.FileURLs)
-			if answer == "" {
+			if answer == "" && len(blobs) <= 0 {
 				return
 			}
 			if len(blobs) <= 0 {
@@ -128,7 +127,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 				Timestamp: event.ThreadTimeStamp,
 			}
 			answer, blobs := generateChatAnswer(ctx, api, params, model, removeMention(event.Text), event.FileURLs)
-			if answer == "" {
+			if answer == "" && len(blobs) <= 0 {
 				return
 			}
 			if len(blobs) <= 0 {
@@ -217,8 +216,7 @@ func generateChatAnswer(
 }
 
 func postMessage(ctx context.Context, api *slack.Client, channel string, options []slack.MsgOption) {
-	_, _, err := api.PostMessageContext(ctx, channel, options...)
-	if err != nil {
+	if _, _, err := api.PostMessageContext(ctx, channel, options...); err != nil {
 		fmt.Println("Failed to post message:", err)
 	}
 }
@@ -232,16 +230,18 @@ func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent
 	} else {
 		ts = event.ThreadTimeStamp
 	}
-	_, err := api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+	params := slack.UploadFileV2Parameters{
 		FileSize:        buf.Len(),
 		Reader:          buf,
 		Filename:        name,
 		Title:           name,
-		InitialComment:  answer,
 		Channel:         event.Channel,
 		ThreadTimestamp: ts,
-	})
-	if err != nil {
+	}
+	if answer != "" {
+		params.InitialComment = answer
+	}
+	if _, err := api.UploadFileV2Context(ctx, params); err != nil {
 		fmt.Println("Failed to upload file:", err)
 	}
 }
