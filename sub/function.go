@@ -89,8 +89,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 		if isDebug {
 			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
-		prompt := strings.TrimSpace(strings.ReplaceAll(event.Text, mention, ""))
-		answer, blobs := generateAnswer(ctx, model, prompt, event.FileURLs)
+		answer, blobs := generateAnswer(ctx, model, removeMention(event.Text), event.FileURLs)
 		if answer == "" {
 			return
 		}
@@ -104,14 +103,13 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 		if isDebug {
 			fmt.Printf("MessageEvent: %#v\n", event)
 		}
-		prompt := strings.TrimSpace(strings.ReplaceAll(event.Text, mention, ""))
 		if event.ThreadTimeStamp == "" {
 			// メンションもしくはダイレクトメッセージ
 			isMentionToBot := strings.Contains(event.Text, mention)
 			if event.ChannelType == slack.TYPE_CHANNEL && !isMentionToBot {
 				return
 			}
-			answer, blobs := generateAnswer(ctx, model, prompt, event.FileURLs)
+			answer, blobs := generateAnswer(ctx, model, removeMention(event.Text), event.FileURLs)
 			if answer == "" {
 				return
 			}
@@ -129,7 +127,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 				ChannelID: event.Channel,
 				Timestamp: event.ThreadTimeStamp,
 			}
-			answer, blobs := generateChatAnswer(ctx, api, params, model, prompt, event.FileURLs)
+			answer, blobs := generateChatAnswer(ctx, api, params, model, removeMention(event.Text), event.FileURLs)
 			if answer == "" {
 				return
 			}
@@ -143,6 +141,11 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 	default:
 		fmt.Println("Unsupported innerEvent type:", event.Type)
 	}
+}
+
+func removeMention(text string) string {
+	mention := "<@" + botUser + ">"
+	return strings.TrimSpace(strings.ReplaceAll(text, mention, ""))
 }
 
 func createBlocks(text string) slack.MsgOption {
@@ -303,7 +306,7 @@ func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Conte
 	}
 	var history []*genai.Content
 	for _, msg := range msgs[:len(msgs)-1] {
-		parts := []genai.Part{genai.Text(msg.Text)}
+		parts := []genai.Part{genai.Text(removeMention(msg.Text))}
 		if len(msg.Files) > 0 {
 			var urls []string
 			for _, file := range msg.Files {
