@@ -14,6 +14,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	A "github.com/IBM/fp-go/array"
 	"github.com/jinzhu/copier"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -117,9 +118,9 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 		}
 		e := APIInnerEvent{}
 		copier.Copy(&e, &innerEvent)
-		for _, file := range innerEvent.Files {
-			e.FileURLs = append(e.FileURLs, file.URLPrivateDownload)
-		}
+		e.FileURLs = A.Map(func(f slackevents.File) string {
+			return f.URLPrivateDownload
+		})(innerEvent.Files)
 		return &e
 	default:
 		fmt.Println("Unsupported innerEvent type:", event.InnerEvent.Type)

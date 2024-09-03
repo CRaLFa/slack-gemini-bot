@@ -18,6 +18,7 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/CRaLFa/slack-gemini-bot/pub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
+	A "github.com/IBM/fp-go/array"
 	"github.com/cloudevents/sdk-go/v2/event"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/slack-go/slack"
@@ -304,26 +305,23 @@ func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Conte
 			return "user"
 		}
 	}
-	var history []*genai.Content
-	for _, msg := range msgs[:len(msgs)-1] {
+	return A.Map(func(msg slack.Message) *genai.Content {
 		parts := []genai.Part{genai.Text(removeMention(msg.Text))}
 		if len(msg.Files) > 0 {
-			var urls []string
-			for _, file := range msg.Files {
-				urls = append(urls, file.URLPrivateDownload)
-			}
+			urls := A.Map(func(f slack.File) string {
+				return f.URLPrivateDownload
+			})(msg.Files)
 			if blobs := getBlobs(ctx, urls); blobs != nil {
 				for _, blob := range blobs {
 					parts = append(parts, blob)
 				}
 			}
 		}
-		history = append(history, &genai.Content{
+		return &genai.Content{
 			Parts: parts,
 			Role:  getRole(msg),
-		})
-	}
-	return history
+		}
+	})(msgs[:len(msgs)-1])
 }
 
 func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan []byte) {

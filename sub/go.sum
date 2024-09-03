@@ -22,6 +22,8 @@ github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240828031243-bf5e4f52e515 h1:YP0
 github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240828031243-bf5e4f52e515/go.mod h1:aKhwrOVGiU+zyC2i82XewvT/nifJJo235fGzj+p/FYw=
 github.com/GoogleCloudPlatform/functions-framework-go v1.9.0 h1:Fq0sKuCyyFFVFm1r6fEQJ4TRnbbhXP9Q6MEUX+UAd/0=
 github.com/GoogleCloudPlatform/functions-framework-go v1.9.0/go.mod h1:8Ww7VHPCGKqCfZOCT9INIiakNgGQPGRfL4U4yy5F5Kc=
+github.com/IBM/fp-go v1.0.149 h1:GlpdFz2BQ1vyY5fOkneFP40q3xvjIJ6GFRziNtFQFbA=
+github.com/IBM/fp-go v1.0.149/go.mod h1:SGPp61/MoivfuBEr86PVNgr+OYbbguCx3vQxfOKF6dQ=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cloudevents/sdk-go/v2 v2.15.2 h1:54+I5xQEnI73RBhWHxbI1XJcqOFOVJN85vb41+8mHUc=
