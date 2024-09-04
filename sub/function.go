@@ -217,14 +217,13 @@ func postMessage(ctx context.Context, api *slack.Client, channel string, options
 func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent, answer string, blob *genai.Blob) {
 	buf := bytes.NewBuffer(blob.Data)
 	name := fmt.Sprintf("file_%d.%s", time.Now().Unix(), filepath.Base(blob.MIMEType))
-	ts := lo.Ternary(event.ThreadTimeStamp == "", event.TimeStamp, event.ThreadTimeStamp)
 	params := slack.UploadFileV2Parameters{
 		FileSize:        buf.Len(),
 		Reader:          buf,
 		Filename:        name,
 		Title:           name,
 		Channel:         event.Channel,
-		ThreadTimestamp: ts,
+		ThreadTimestamp: lo.Ternary(event.ThreadTimeStamp == "", event.TimeStamp, event.ThreadTimeStamp),
 	}
 	if answer != "" {
 		params.InitialComment = answer
