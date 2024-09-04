@@ -6,9 +6,9 @@ require (
 	cloud.google.com/go/pubsub v1.42.0
 	github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240828031243-bf5e4f52e515
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.0
-	github.com/IBM/fp-go v1.0.149
 	github.com/cloudevents/sdk-go/v2 v2.15.2
 	github.com/google/generative-ai-go v0.17.0
+	github.com/samber/lo v1.47.0
 	github.com/slack-go/slack v0.14.0
 	google.golang.org/api v0.194.0
 )

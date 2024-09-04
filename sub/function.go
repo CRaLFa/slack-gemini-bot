@@ -18,9 +18,9 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/CRaLFa/slack-gemini-bot/pub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
-	A "github.com/IBM/fp-go/array"
 	"github.com/cloudevents/sdk-go/v2/event"
 	"github.com/google/generative-ai-go/genai"
+	"github.com/samber/lo"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"google.golang.org/api/option"
@@ -217,12 +217,7 @@ func postMessage(ctx context.Context, api *slack.Client, channel string, options
 func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent, answer string, blob *genai.Blob) {
 	buf := bytes.NewBuffer(blob.Data)
 	name := fmt.Sprintf("file_%d.%s", time.Now().Unix(), filepath.Base(blob.MIMEType))
-	var ts string
-	if event.ThreadTimeStamp == "" {
-		ts = event.TimeStamp
-	} else {
-		ts = event.ThreadTimeStamp
-	}
+	ts := lo.Ternary(event.ThreadTimeStamp == "", event.TimeStamp, event.ThreadTimeStamp)
 	params := slack.UploadFileV2Parameters{
 		FileSize:        buf.Len(),
 		Reader:          buf,
@@ -297,26 +292,19 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 }
 
 func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Content {
-	getRole := func(msg slack.Message) string {
-		if msg.User == botUser {
-			return "model"
-		} else {
-			return "user"
-		}
-	}
-	return A.Map(func(msg slack.Message) *genai.Content {
+	return lo.Map(msgs[:len(msgs)-1], func(msg slack.Message, _ int) *genai.Content {
 		parts := []genai.Part{genai.Text(removeMention(msg.Text))}
 		if len(msg.Files) > 0 {
-			urls := A.Map(func(f slack.File) string {
+			urls := lo.Map(msg.Files, func(f slack.File, _ int) string {
 				return f.URLPrivateDownload
-			})(msg.Files)
+			})
 			appendParts(&parts, getBlobs(ctx, urls))
 		}
 		return &genai.Content{
 			Parts: parts,
-			Role:  getRole(msg),
+			Role:  lo.Ternary(msg.User == botUser, "model", "user"),
 		}
-	})(msgs[:len(msgs)-1])
+	})
 }
 
 func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan []byte) {
