@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 	"github.com/cloudevents/sdk-go/v2/event"
 	"github.com/google/generative-ai-go/genai"
+	"github.com/samber/lo"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"google.golang.org/api/option"
@@ -162,11 +163,7 @@ func generateAnswer(
 		return "", nil
 	}
 	parts := []genai.Part{genai.Text(prompt)}
-	if blobs := getBlobs(ctx, fileURLs); blobs != nil {
-		for _, blob := range blobs {
-			parts = append(parts, blob)
-		}
-	}
+	appendParts(&parts, getBlobs(ctx, fileURLs))
 	res, err := model.GenerateContent(ctx, parts...)
 	if err != nil {
 		fmt.Println("Failed to get Gemini's response:", err)
@@ -202,11 +199,7 @@ func generateChatAnswer(
 	chat := model.StartChat()
 	chat.History = createChatHistory(ctx, msgs)
 	parts := []genai.Part{genai.Text(prompt)}
-	if blobs := getBlobs(ctx, fileURLs); blobs != nil {
-		for _, blob := range blobs {
-			parts = append(parts, blob)
-		}
-	}
+	appendParts(&parts, getBlobs(ctx, fileURLs))
 	res, err := chat.SendMessage(ctx, parts...)
 	if err != nil {
 		fmt.Println("Failed to get Gemini's response:", err)
@@ -224,12 +217,7 @@ func postMessage(ctx context.Context, api *slack.Client, channel string, options
 func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent, answer string, blob *genai.Blob) {
 	buf := bytes.NewBuffer(blob.Data)
 	name := fmt.Sprintf("file_%d.%s", time.Now().Unix(), filepath.Base(blob.MIMEType))
-	var ts string
-	if event.ThreadTimeStamp == "" {
-		ts = event.TimeStamp
-	} else {
-		ts = event.ThreadTimeStamp
-	}
+	ts := lo.Ternary(event.ThreadTimeStamp == "", event.TimeStamp, event.ThreadTimeStamp)
 	params := slack.UploadFileV2Parameters{
 		FileSize:        buf.Len(),
 		Reader:          buf,
@@ -267,6 +255,12 @@ func getBlobs(ctx context.Context, urls []string) []genai.Blob {
 	return blobs
 }
 
+func appendParts[P genai.Part](sp *[]genai.Part, parts []P) {
+	for _, p := range parts {
+		*sp = append(*sp, p)
+	}
+}
+
 func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 	reList := regexp.MustCompile(`(\n+\s*)\* `)
 	replaceMarkdown := func(s string) string {
@@ -280,16 +274,17 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 	var strBuf []string
 	var blobs []genai.Blob
 	for _, cand := range res.Candidates {
-		if cand != nil {
-			for _, part := range cand.Content.Parts {
-				switch p := part.(type) {
-				case genai.Text:
-					strBuf = append(strBuf, replaceMarkdown(string(p)))
-				case genai.Blob:
-					blobs = append(blobs, p)
-				default:
-					continue
-				}
+		if cand == nil {
+			continue
+		}
+		for _, part := range cand.Content.Parts {
+			switch p := part.(type) {
+			case genai.Text:
+				strBuf = append(strBuf, replaceMarkdown(string(p)))
+			case genai.Blob:
+				blobs = append(blobs, p)
+			default:
+				continue
 			}
 		}
 	}
@@ -297,33 +292,19 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 }
 
 func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Content {
-	getRole := func(msg slack.Message) string {
-		if msg.User == botUser {
-			return "model"
-		} else {
-			return "user"
-		}
-	}
-	var history []*genai.Content
-	for _, msg := range msgs[:len(msgs)-1] {
+	return lo.Map(msgs[:len(msgs)-1], func(msg slack.Message, _ int) *genai.Content {
 		parts := []genai.Part{genai.Text(removeMention(msg.Text))}
 		if len(msg.Files) > 0 {
-			var urls []string
-			for _, file := range msg.Files {
-				urls = append(urls, file.URLPrivateDownload)
-			}
-			if blobs := getBlobs(ctx, urls); blobs != nil {
-				for _, blob := range blobs {
-					parts = append(parts, blob)
-				}
-			}
+			urls := lo.Map(msg.Files, func(f slack.File, _ int) string {
+				return f.URLPrivateDownload
+			})
+			appendParts(&parts, getBlobs(ctx, urls))
 		}
-		history = append(history, &genai.Content{
+		return &genai.Content{
 			Parts: parts,
-			Role:  getRole(msg),
-		})
-	}
-	return history
+			Role:  lo.Ternary(msg.User == botUser, "model", "user"),
+		}
+	})
 }
 
 func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan []byte) {

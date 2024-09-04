@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.42.0
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.0
 	github.com/jinzhu/copier v0.4.0
+	github.com/samber/lo v1.47.0
 	github.com/slack-go/slack v0.14.0
 )
 
