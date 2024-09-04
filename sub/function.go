@@ -163,11 +163,7 @@ func generateAnswer(
 		return "", nil
 	}
 	parts := []genai.Part{genai.Text(prompt)}
-	if blobs := getBlobs(ctx, fileURLs); blobs != nil {
-		for _, blob := range blobs {
-			parts = append(parts, blob)
-		}
-	}
+	appendParts(&parts, getBlobs(ctx, fileURLs))
 	res, err := model.GenerateContent(ctx, parts...)
 	if err != nil {
 		fmt.Println("Failed to get Gemini's response:", err)
@@ -203,11 +199,7 @@ func generateChatAnswer(
 	chat := model.StartChat()
 	chat.History = createChatHistory(ctx, msgs)
 	parts := []genai.Part{genai.Text(prompt)}
-	if blobs := getBlobs(ctx, fileURLs); blobs != nil {
-		for _, blob := range blobs {
-			parts = append(parts, blob)
-		}
-	}
+	appendParts(&parts, getBlobs(ctx, fileURLs))
 	res, err := chat.SendMessage(ctx, parts...)
 	if err != nil {
 		fmt.Println("Failed to get Gemini's response:", err)
@@ -268,6 +260,12 @@ func getBlobs(ctx context.Context, urls []string) []genai.Blob {
 	return blobs
 }
 
+func appendParts[P genai.Part](sp *[]genai.Part, parts []P) {
+	for _, p := range parts {
+		*sp = append(*sp, p)
+	}
+}
+
 func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 	reList := regexp.MustCompile(`(\n+\s*)\* `)
 	replaceMarkdown := func(s string) string {
@@ -281,16 +279,17 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 	var strBuf []string
 	var blobs []genai.Blob
 	for _, cand := range res.Candidates {
-		if cand != nil {
-			for _, part := range cand.Content.Parts {
-				switch p := part.(type) {
-				case genai.Text:
-					strBuf = append(strBuf, replaceMarkdown(string(p)))
-				case genai.Blob:
-					blobs = append(blobs, p)
-				default:
-					continue
-				}
+		if cand == nil {
+			continue
+		}
+		for _, part := range cand.Content.Parts {
+			switch p := part.(type) {
+			case genai.Text:
+				strBuf = append(strBuf, replaceMarkdown(string(p)))
+			case genai.Blob:
+				blobs = append(blobs, p)
+			default:
+				continue
 			}
 		}
 	}
@@ -311,11 +310,7 @@ func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Conte
 			urls := A.Map(func(f slack.File) string {
 				return f.URLPrivateDownload
 			})(msg.Files)
-			if blobs := getBlobs(ctx, urls); blobs != nil {
-				for _, blob := range blobs {
-					parts = append(parts, blob)
-				}
-			}
+			appendParts(&parts, getBlobs(ctx, urls))
 		}
 		return &genai.Content{
 			Parts: parts,
