@@ -306,7 +306,7 @@ func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Conte
 	})
 }
 
-func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan []byte) {
+func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan<- []byte) {
 	defer wg.Done()
 	if url == "" {
 		return
