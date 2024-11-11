@@ -1,5 +1,9 @@
 #!/bin/bash
 
+set -eu
+
+. set_env.sh
+
 deploy_pub () {
 	(cd pub && go mod tidy)
 	gcloud functions deploy slack-gemini-pub \
@@ -11,7 +15,7 @@ deploy_pub () {
 		--trigger-http \
 		--allow-unauthenticated \
 		--env-vars-file=./.env.yaml \
-		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com
+		--service-account="$SERVICE_ACCOUNT"
 }
 
 deploy_sub () {
@@ -24,11 +28,11 @@ deploy_sub () {
 		--entry-point=Subscribe \
 		--trigger-topic=slack-gemini \
 		--env-vars-file=./.env.yaml \
-		--service-account=cloud-functions@spartan-theorem-431702-b2.iam.gserviceaccount.com
+		--service-account="$SERVICE_ACCOUNT"
 }
 
 main () {
-	cd $(dirname "$0")
+	cd "$(dirname "$0")"
 	[[ $# -lt 1 || "$1" = 'pub' ]] && {
 		echo -e 'Start deploying slack-gemini-pub function...\n'
 		deploy_pub

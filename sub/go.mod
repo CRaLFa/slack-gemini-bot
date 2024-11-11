@@ -4,7 +4,7 @@ go 1.22.5
 
 require (
 	cloud.google.com/go/pubsub v1.42.0
-	github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20240828031243-bf5e4f52e515
+	github.com/CRaLFa/slack-gemini-bot/pub v0.0.0-20241018095843-f39cfba4b52d
 	github.com/GoogleCloudPlatform/functions-framework-go v1.9.0
 	github.com/cloudevents/sdk-go/v2 v2.15.2
 	github.com/google/generative-ai-go v0.17.0
@@ -30,6 +30,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
