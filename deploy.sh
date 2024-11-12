@@ -2,8 +2,6 @@
 
 set -eu
 
-readonly BASE_DIR="$(realpath "$(dirname "$0")")"
-
 deploy_pub () {
 	(cd pub && go mod tidy)
 	gcloud functions deploy slack-gemini-pub \
@@ -32,18 +30,16 @@ deploy_sub () {
 }
 
 main () {
-	cd "$BASE_DIR"
-	[ -r set_env.sh ] && . set_env.sh
-
+	cd "$(realpath "$(dirname "$0")")"
+	local service_account="$(yq -r '.SERVICE_ACCOUNT' < .env.yaml)"
 	[[ $# -lt 1 || "$1" = 'pub' ]] && {
 		echo -e 'Start deploying slack-gemini-pub function...\n'
-		deploy_pub "$SERVICE_ACCOUNT"
+		deploy_pub "$service_account"
 		echo
 	}
-
 	[[ $# -lt 1 || "$1" = 'sub' ]] && {
 		echo -e 'Start deploying slack-gemini-sub function...\n'
-		deploy_sub "$SERVICE_ACCOUNT"
+		deploy_sub "$service_account"
 	}
 }
 
