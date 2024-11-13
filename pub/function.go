@@ -60,14 +60,14 @@ func Publish(w http.ResponseWriter, r *http.Request) {
 
 	client, err := pubsub.NewClient(ctx, projectID)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	defer client.Close()
 
 	if err := publishTopic(ctx, client, innerEvent); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
@@ -76,7 +76,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		fmt.Println("No request body")
+		fmt.Fprintln(os.Stderr, "No request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return nil
 	}
@@ -100,7 +100,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 
 func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 	if event.Type != slackevents.CallbackEvent {
-		fmt.Println("Unsupported event type:", event.Type)
+		fmt.Fprintln(os.Stderr, "Unsupported event type:", event.Type)
 		return nil
 	}
 	switch innerEvent := event.InnerEvent.Data.(type) {
@@ -123,7 +123,7 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 		})
 		return &e
 	default:
-		fmt.Println("Unsupported innerEvent type:", event.InnerEvent.Type)
+		fmt.Fprintln(os.Stderr, "Unsupported innerEvent type:", event.InnerEvent.Type)
 		return nil
 	}
 }

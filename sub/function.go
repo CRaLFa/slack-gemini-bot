@@ -48,7 +48,7 @@ func init() {
 func Subscribe(ctx context.Context, e event.Event) error {
 	var msg MessagePublishedData
 	if err := e.DataAs(&msg); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 	fmt.Printf("Received a message: %s\n", msg.Message.ID)
@@ -56,14 +56,14 @@ func Subscribe(ctx context.Context, e event.Event) error {
 	buf := bytes.NewBuffer(msg.Message.Data)
 	var event pub.APIInnerEvent
 	if err := gob.NewDecoder(buf).Decode(&event); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 
 	api := slack.New(slackBotToken, slack.OptionDebug(isDebug))
 	res, err := api.AuthTest()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 	botUser = res.UserID
@@ -73,7 +73,7 @@ func Subscribe(ctx context.Context, e event.Event) error {
 
 	gemini, err := genai.NewClient(ctx, option.WithAPIKey(geminiAPIKey))
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
 	defer gemini.Close()
@@ -139,7 +139,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 			}
 		}
 	default:
-		fmt.Println("Unsupported innerEvent type:", event.Type)
+		fmt.Fprintln(os.Stderr, "Unsupported innerEvent type:", event.Type)
 	}
 }
 
@@ -166,7 +166,7 @@ func generateAnswer(
 	appendParts(&parts, getBlobs(ctx, fileURLs))
 	res, err := model.GenerateContent(ctx, parts...)
 	if err != nil {
-		fmt.Println("Failed to get Gemini's response:", err)
+		fmt.Fprintln(os.Stderr, "Failed to get Gemini's response:", err)
 		return "", nil
 	}
 	return joinResponse(res)
@@ -185,7 +185,7 @@ func generateChatAnswer(
 	}
 	msgs, _, _, err := api.GetConversationRepliesContext(ctx, params)
 	if err != nil {
-		fmt.Println("Failed to get thread content:", err)
+		fmt.Fprintln(os.Stderr, "Failed to get thread content:", err)
 		return "", nil
 	}
 	if msgs[len(msgs)-2].User != botUser {
@@ -202,7 +202,7 @@ func generateChatAnswer(
 	appendParts(&parts, getBlobs(ctx, fileURLs))
 	res, err := chat.SendMessage(ctx, parts...)
 	if err != nil {
-		fmt.Println("Failed to get Gemini's response:", err)
+		fmt.Fprintln(os.Stderr, "Failed to get Gemini's response:", err)
 		return "", nil
 	}
 	return joinResponse(res)
@@ -210,7 +210,7 @@ func generateChatAnswer(
 
 func postMessage(ctx context.Context, api *slack.Client, channel string, options []slack.MsgOption) {
 	if _, _, err := api.PostMessageContext(ctx, channel, options...); err != nil {
-		fmt.Println("Failed to post message:", err)
+		fmt.Fprintln(os.Stderr, "Failed to post message:", err)
 	}
 }
 
@@ -229,7 +229,7 @@ func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent
 		params.InitialComment = answer
 	}
 	if _, err := api.UploadFileV2Context(ctx, params); err != nil {
-		fmt.Println("Failed to upload file:", err)
+		fmt.Fprintln(os.Stderr, "Failed to upload file:", err)
 	}
 }
 
@@ -313,20 +313,24 @@ func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan<- []
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+slackBotToken)
 	res, err := http.DefaultClient.Do(req)
-	if err != nil || res.StatusCode != http.StatusOK {
-		fmt.Println("Failed to fetch file data:", res.Status)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return
 	}
 	defer res.Body.Close()
-	data, err := io.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return
 	}
-	ch <- data
+	if res.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "Failed to fetch file data:", string(body))
+		return
+	}
+	ch <- body
 }
