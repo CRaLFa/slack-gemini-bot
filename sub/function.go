@@ -19,22 +19,27 @@ import (
 	"github.com/CRaLFa/slack-gemini-bot/pub"
 	"github.com/GoogleCloudPlatform/functions-framework-go/functions"
 	"github.com/cloudevents/sdk-go/v2/event"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/samber/lo"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 type MessagePublishedData struct {
 	Message pubsub.Message
 }
 
+const geminiModel = "gemini-2.0-flash-exp-image-generation"
+
 var (
 	slackBotToken string
 	geminiAPIKey  string
 	isDebug       bool
 	botUser       string
+
+	generationConfig = &genai.GenerateContentConfig{
+		ResponseModalities: []string{"TEXT", "IMAGE"},
+	}
 )
 
 func init() {
@@ -51,7 +56,6 @@ func Subscribe(ctx context.Context, e event.Event) error {
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
-	fmt.Printf("Received a message: %s\n", msg.Message.ID)
 
 	buf := bytes.NewBuffer(msg.Message.Data)
 	var event pub.APIInnerEvent
@@ -71,25 +75,25 @@ func Subscribe(ctx context.Context, e event.Event) error {
 		return nil
 	}
 
-	gemini, err := genai.NewClient(ctx, option.WithAPIKey(geminiAPIKey))
+	gemini, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: geminiAPIKey,
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return err
 	}
-	defer gemini.Close()
-	model := gemini.GenerativeModel("gemini-1.5-flash")
 
-	processEvent(ctx, &event, api, model)
+	processEvent(ctx, &event, api, gemini)
 	return nil
 }
 
-func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Client, model *genai.GenerativeModel) {
+func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Client, gemini *genai.Client) {
 	switch event.Type {
 	case string(slackevents.AppMention):
 		if isDebug {
 			fmt.Printf("AppMentionEvent: %#v\n", event)
 		}
-		answer, blobs := generateAnswer(ctx, model, removeMention(event.Text), event.FileURLs)
+		answer, blobs := generateAnswer(ctx, gemini, removeMention(event.Text), event.FileURLs)
 		if answer == "" && len(blobs) <= 0 {
 			return
 		}
@@ -97,7 +101,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 			options := []slack.MsgOption{createBlocks(answer), slack.MsgOptionTS(event.TimeStamp)}
 			postMessage(ctx, api, event.Channel, options)
 		} else {
-			uploadFile(ctx, api, event, answer, &blobs[0])
+			uploadFile(ctx, api, event, answer, &blobs[0], true)
 		}
 	case string(slackevents.Message):
 		if isDebug {
@@ -109,7 +113,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 			if event.ChannelType == slack.TYPE_CHANNEL && !isMentionToBot {
 				return
 			}
-			answer, blobs := generateAnswer(ctx, model, removeMention(event.Text), event.FileURLs)
+			answer, blobs := generateAnswer(ctx, gemini, removeMention(event.Text), event.FileURLs)
 			if answer == "" && len(blobs) <= 0 {
 				return
 			}
@@ -120,14 +124,15 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 				}
 				postMessage(ctx, api, event.Channel, options)
 			} else {
-				uploadFile(ctx, api, event, answer, &blobs[0])
+				uploadFile(ctx, api, event, answer, &blobs[0], isMentionToBot)
 			}
 		} else {
+			// スレッド内のメッセージ
 			params := &slack.GetConversationRepliesParameters{
 				ChannelID: event.Channel,
 				Timestamp: event.ThreadTimeStamp,
 			}
-			answer, blobs := generateChatAnswer(ctx, api, params, model, removeMention(event.Text), event.FileURLs)
+			answer, blobs := generateChatAnswer(ctx, api, params, gemini, removeMention(event.Text), event.FileURLs)
 			if answer == "" && len(blobs) <= 0 {
 				return
 			}
@@ -135,7 +140,7 @@ func processEvent(ctx context.Context, event *pub.APIInnerEvent, api *slack.Clie
 				options := []slack.MsgOption{createBlocks(answer), slack.MsgOptionTS(event.ThreadTimeStamp)}
 				postMessage(ctx, api, event.Channel, options)
 			} else {
-				uploadFile(ctx, api, event, answer, &blobs[0])
+				uploadFile(ctx, api, event, answer, &blobs[0], true)
 			}
 		}
 	default:
@@ -155,16 +160,26 @@ func createBlocks(text string) slack.MsgOption {
 
 func generateAnswer(
 	ctx context.Context,
-	model *genai.GenerativeModel,
+	gemini *genai.Client,
 	prompt string,
 	fileURLs []string,
 ) (string, []genai.Blob) {
 	if prompt == "" {
 		return "", nil
 	}
-	parts := []genai.Part{genai.Text(prompt)}
-	appendParts(&parts, getBlobs(ctx, fileURLs))
-	res, err := model.GenerateContent(ctx, parts...)
+	parts := []*genai.Part{{
+		Text: prompt,
+	}}
+	for _, b := range getBlobs(ctx, fileURLs) {
+		parts = append(parts, &genai.Part{
+			InlineData: &b,
+		})
+	}
+	contents := []*genai.Content{{
+		Parts: parts,
+		Role:  "user",
+	}}
+	res, err := gemini.Models.GenerateContent(ctx, geminiModel, contents, generationConfig)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to get Gemini's response:", err)
 		return "", nil
@@ -176,13 +191,14 @@ func generateChatAnswer(
 	ctx context.Context,
 	api *slack.Client,
 	params *slack.GetConversationRepliesParameters,
-	model *genai.GenerativeModel,
+	gemini *genai.Client,
 	prompt string,
 	fileURLs []string,
 ) (string, []genai.Blob) {
 	if prompt == "" {
 		return "", nil
 	}
+
 	msgs, _, _, err := api.GetConversationRepliesContext(ctx, params)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to get thread content:", err)
@@ -196,10 +212,23 @@ func generateChatAnswer(
 			fmt.Printf("msgs[%d]: %#v\n", i, msg)
 		}
 	}
-	chat := model.StartChat()
-	chat.History = createChatHistory(ctx, msgs)
-	parts := []genai.Part{genai.Text(prompt)}
-	appendParts(&parts, getBlobs(ctx, fileURLs))
+	history := createChatHistory(ctx, msgs)
+
+	parts := []genai.Part{{
+		Text: prompt,
+	}}
+	for _, b := range getBlobs(ctx, fileURLs) {
+		parts = append(parts, genai.Part{
+			InlineData: &b,
+		})
+	}
+
+	chat, err := gemini.Chats.Create(ctx, geminiModel, generationConfig, history)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to create chat:", err)
+		return "", nil
+	}
+
 	res, err := chat.SendMessage(ctx, parts...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to get Gemini's response:", err)
@@ -214,19 +243,21 @@ func postMessage(ctx context.Context, api *slack.Client, channel string, options
 	}
 }
 
-func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent, answer string, blob *genai.Blob) {
+func uploadFile(ctx context.Context, api *slack.Client, event *pub.APIInnerEvent, answer string, blob *genai.Blob, isReply bool) {
 	buf := bytes.NewBuffer(blob.Data)
 	name := fmt.Sprintf("file_%d.%s", time.Now().Unix(), filepath.Base(blob.MIMEType))
 	params := slack.UploadFileV2Parameters{
-		FileSize:        buf.Len(),
-		Reader:          buf,
-		Filename:        name,
-		Title:           name,
-		Channel:         event.Channel,
-		ThreadTimestamp: lo.Ternary(event.ThreadTimeStamp == "", event.TimeStamp, event.ThreadTimeStamp),
+		FileSize: buf.Len(),
+		Reader:   buf,
+		Filename: name,
+		Title:    name,
+		Channel:  event.Channel,
 	}
 	if answer != "" {
 		params.InitialComment = answer
+	}
+	if isReply {
+		params.ThreadTimestamp = lo.Ternary(event.ThreadTimeStamp == "", event.TimeStamp, event.ThreadTimeStamp)
 	}
 	if _, err := api.UploadFileV2Context(ctx, params); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to upload file:", err)
@@ -244,6 +275,7 @@ func getBlobs(ctx context.Context, urls []string) []genai.Blob {
 		wg.Wait()
 		close(ch)
 	}()
+
 	var blobs []genai.Blob
 	for data := range ch {
 		blobs = append(blobs, genai.Blob{
@@ -252,12 +284,6 @@ func getBlobs(ctx context.Context, urls []string) []genai.Blob {
 		})
 	}
 	return blobs
-}
-
-func appendParts[P genai.Part](sp *[]genai.Part, parts []P) {
-	for _, p := range parts {
-		*sp = append(*sp, p)
-	}
 }
 
 func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
@@ -270,6 +296,7 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 		s = strings.ReplaceAll(s, "**", "*")
 		return s
 	}
+
 	var strBuf []string
 	var blobs []genai.Blob
 	for _, cand := range res.Candidates {
@@ -277,13 +304,11 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 			continue
 		}
 		for _, part := range cand.Content.Parts {
-			switch p := part.(type) {
-			case genai.Text:
-				strBuf = append(strBuf, replaceMarkdown(string(p)))
-			case genai.Blob:
-				blobs = append(blobs, p)
-			default:
-				continue
+			if part.Text != "" {
+				strBuf = append(strBuf, replaceMarkdown(part.Text))
+			}
+			if part.InlineData != nil {
+				blobs = append(blobs, *part.InlineData)
 			}
 		}
 	}
@@ -292,12 +317,18 @@ func joinResponse(res *genai.GenerateContentResponse) (string, []genai.Blob) {
 
 func createChatHistory(ctx context.Context, msgs []slack.Message) []*genai.Content {
 	return lo.Map(msgs[:len(msgs)-1], func(msg slack.Message, _ int) *genai.Content {
-		parts := []genai.Part{genai.Text(removeMention(msg.Text))}
+		parts := []*genai.Part{{
+			Text: removeMention(msg.Text),
+		}}
 		if len(msg.Files) > 0 {
 			urls := lo.Map(msg.Files, func(f slack.File, _ int) string {
 				return f.URLPrivateDownload
 			})
-			appendParts(&parts, getBlobs(ctx, urls))
+			for _, b := range getBlobs(ctx, urls) {
+				parts = append(parts, &genai.Part{
+					InlineData: &b,
+				})
+			}
 		}
 		return &genai.Content{
 			Parts: parts,
@@ -317,12 +348,14 @@ func fetchFile(ctx context.Context, url string, wg *sync.WaitGroup, ch chan<- []
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+slackBotToken)
+
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
 	defer res.Body.Close()
+
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
