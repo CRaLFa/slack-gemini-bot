@@ -29,7 +29,7 @@ type MessagePublishedData struct {
 	Message pubsub.Message
 }
 
-const geminiModel = "gemini-2.0-flash-exp-image-generation"
+const geminiModel = "gemini-2.0-flash-exp"
 
 var (
 	slackBotToken string
