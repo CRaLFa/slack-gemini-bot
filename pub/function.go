@@ -40,7 +40,12 @@ var (
 func init() {
 	projectID = os.Getenv("PROJECT_ID")
 	topicID = os.Getenv("TOPIC_ID")
-	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
+
+	var err error
+	isDebug, err = strconv.ParseBool(os.Getenv("DEBUG"))
+	if err != nil {
+		panic(err)
+	}
 
 	functions.HTTP("Publish", Publish)
 }
@@ -74,17 +79,20 @@ func Publish(w http.ResponseWriter, r *http.Request) {
 
 func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAPIEvent {
 	defer r.Body.Close()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "No request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return nil
 	}
+
 	event, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return nil
 	}
+
 	if event.Type == slackevents.URLVerification {
 		var res slackevents.ChallengeResponse
 		if err := json.Unmarshal(body, &res); err != nil {
@@ -92,9 +100,10 @@ func handleRequest(w http.ResponseWriter, r *http.Request) *slackevents.EventsAP
 			return nil
 		}
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(res.Challenge))
+		fmt.Fprint(w, res.Challenge)
 		return nil
 	}
+
 	return &event
 }
 
@@ -103,6 +112,7 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 		fmt.Fprintln(os.Stderr, "Unsupported event type:", event.Type)
 		return nil
 	}
+
 	switch innerEvent := event.InnerEvent.Data.(type) {
 	case *slackevents.AppMentionEvent:
 		if isDebug {
@@ -129,10 +139,11 @@ func toApiInnerEvent(event *slackevents.EventsAPIEvent) *APIInnerEvent {
 }
 
 func publishTopic(ctx context.Context, client *pubsub.Client, innerEvent *APIInnerEvent) error {
-	buf := bytes.NewBuffer(nil)
+	buf := new(bytes.Buffer)
 	if err := gob.NewEncoder(buf).Encode(innerEvent); err != nil {
 		return err
 	}
+
 	result := client.Topic(topicID).Publish(ctx, &pubsub.Message{
 		Data: buf.Bytes(),
 	})
