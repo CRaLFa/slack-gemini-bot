@@ -45,7 +45,12 @@ var (
 func init() {
 	slackBotToken = os.Getenv("SLACK_BOT_TOKEN")
 	geminiAPIKey = os.Getenv("GEMINI_API_KEY")
-	isDebug, _ = strconv.ParseBool(os.Getenv("DEBUG"))
+
+	var err error
+	isDebug, err = strconv.ParseBool(os.Getenv("DEBUG"))
+	if err != nil {
+		panic(err)
+	}
 
 	functions.CloudEvent("Subscribe", Subscribe)
 }
