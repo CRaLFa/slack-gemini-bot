@@ -6,7 +6,7 @@ deploy_pub () {
 	(cd pub && go mod tidy)
 	gcloud --project="$1" functions deploy slack-gemini-pub \
 		--gen2 \
-		--runtime=go123 \
+		--runtime=go125 \
 		--region=asia-northeast1 \
 		--source=./pub \
 		--entry-point=Publish \
@@ -20,7 +20,7 @@ deploy_sub () {
 	(cd sub && go mod tidy)
 	gcloud --project="$1" functions deploy slack-gemini-sub \
 		--gen2 \
-		--runtime=go123 \
+		--runtime=go125 \
 		--region=asia-northeast1 \
 		--source=./sub \
 		--entry-point=Subscribe \
